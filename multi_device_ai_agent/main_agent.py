@@ -5,13 +5,15 @@ from langchain.agents import initialize_agent, Tool
 from langchain.chat_models import ChatOpenAI
 #from langchain_community.llms import Ollama
 import urllib3
+from dotenv import load_dotenv
 
 # Import the tools and prompt templates from your agent scripts
 from R1_agent import tools as r1_tools, prompt_template as r1_prompt
 from R2_agent import tools as r2_tools, prompt_template as r2_prompt
 from SW1_agent import tools as sw1_tools, prompt_template as sw1_prompt
 from SW2_agent import tools as sw2_tools, prompt_template as sw2_prompt
-from dotenv import load_dotenv
+# Import tools and prompt templates from agent scripts
+from netbox_agent import tools as netbox_tools, prompt_template as netbox_prompt  # Import NetBox agent
 
 # Load environment variables
 load_dotenv()
@@ -21,7 +23,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 logging.basicConfig(level=logging.INFO)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-#llm = Ollama(model="command-r7b", temperature=0.3, base_url="http://ollama:11434")
+#llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
 llm = ChatOpenAI(model_name="gpt-4o", temperature=0.3)
 
 # Initialize sub-agents for each device
@@ -57,6 +59,15 @@ sw2_agent = initialize_agent(
     verbose=True
 )
 
+# Initialize the NetBox agent
+netbox_agent = initialize_agent(
+    tools=netbox_tools,
+    llm=llm,
+    agent='zero-shot-react-description',
+    prompt=netbox_prompt,
+    verbose=True
+)
+
 def r1_agent_func(input_text: str) -> str:
     return r1_agent.run(f"R1: {input_text}")
 
@@ -69,14 +80,18 @@ def sw1_agent_func(input_text: str) -> str:
 def sw2_agent_func(input_text: str) -> str:
     return sw2_agent.run(f"SW2: {input_text}")
 
+def netbox_agent_func(input_text: str) -> str:
+    return netbox_agent.run(f"NetBox: {input_text}")
+
 # Define tools for each sub-agent
 r1_tool = Tool(name="R1 Agent", func=r1_agent_func, description="Use for Router R1 commands.")
 r2_tool = Tool(name="R2 Agent", func=r2_agent_func, description="Use for Router R2 commands.")
 sw1_tool = Tool(name="SW1 Agent", func=sw1_agent_func, description="Use for Switch SW1 commands.")
 sw2_tool = Tool(name="SW2 Agent", func=sw2_agent_func, description="Use for Switch SW2 commands.")
+netbox_tool = Tool(name="NetBox Agent", func=netbox_agent_func, description="Use for NetBox operations and queries.")
 
 # Create the master tool list
-master_tools = [r1_tool, r2_tool, sw1_tool, sw2_tool]
+master_tools = [r1_tool, r2_tool, sw1_tool, sw2_tool, netbox_tool]
 
 master_agent = initialize_agent(
     tools=master_tools,

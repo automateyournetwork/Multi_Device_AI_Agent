@@ -2,6 +2,8 @@ import os
 import json
 import difflib
 import logging
+import textwrap
+import textwrap
 from pyats.topology import loader
 #from langchain_community.llms import Ollama
 from langchain.chat_models import ChatOpenAI
@@ -110,20 +112,24 @@ def apply_device_configuration(device_name: str, config_commands: str):
         if not device.is_connected():
             device.connect()
 
-        # Filter out 'configure terminal' and 'end'
-        filtered_commands = "\n".join([
-            cmd for cmd in config_commands.splitlines()
-            if "configure terminal" not in cmd.lower() and "end" not in cmd.lower()
-        ])
+        # Convert escaped newlines to proper multi-line Python strings
+        if "\\n" in config_commands or "\n" in config_commands:
+            logger.info("Detected newline characters in the configuration. Converting to multi-line Python string.")
+            lines = config_commands.replace("\\n", "\n").strip().split("\n")
+            config_commands = "\n".join(lines)
 
-        logger.info(f"Applying configuration on {device_name}:\n{filtered_commands}")
-        device.configure(filtered_commands)
+        # Clean and apply configuration
+        cleaned_config = textwrap.dedent(config_commands.strip())
+        logger.info(f"Applying configuration on {device_name}:\n{cleaned_config}")
+
+        device.configure(cleaned_config)
 
         logger.info(f"Disconnecting from {device_name}...")
         device.disconnect()
 
         return {"status": "success", "message": f"Configuration applied successfully on {device_name}."}
     except Exception as e:
+        logger.error(f"Error applying configuration: {str(e)}")
         return {"status": "error", "error": str(e)}
 
 # Function to learn the configuration using pyATS
@@ -235,13 +241,16 @@ def apply_configuration_tool(input_text: str) -> dict:
     Example:
         "R1: ntp server 192.168.100.100"
         or
-        "SW2: interface loopback 100\n description AI Created\n ip address 10.10.100.100 255.255.255.0\n no shutdown"
+        "SW2: interface loopback 100\ndescription AI Created\nip address 10.10.100.100 255.255.255.0\nno shutdown"
     """
     try:
         # Split device name and commands
         device_name, config_commands = input_text.split(":", 1)
         device_name = device_name.strip()
         config_commands = config_commands.strip()
+
+        # Reformat to multi-line Python string
+        config_commands = reformat_to_multiline(config_commands)
 
         logging.info(f"🛠 Applying configuration on {device_name}: {config_commands}")
         return apply_device_configuration(device_name, config_commands)
@@ -268,11 +277,12 @@ def learn_logging_tool(dummy_input: str = "") -> dict:
 # ============================================================
 
 # Initialize the LLM (you can replace 'gpt-3.5-turbo' with your desired model)
-#llm = Ollama(model="command-r7b", temperature=0.3, base_url="http://ollama:11434")
+#llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
 llm = ChatOpenAI(model_name="gpt-4o", temperature=0.3)
 
 # Create a list of tools
-tools = [run_show_command_tool, check_supported_command_tool, apply_configuration_tool, learn_config_tool, learn_logging_tool]
+#tools = [run_show_command_tool, check_supported_command_tool, apply_configuration_tool, learn_config_tool, learn_logging_tool]
+tools = [run_show_command_tool, apply_configuration_tool, learn_config_tool, learn_logging_tool]
 
 # Render text descriptions for the tools for inclusion in the prompt
 tool_descriptions = render_text_description(tools)
@@ -288,13 +298,19 @@ NETWORK INSTRUCTIONS:
 
 Assistant is a network assistant with the capability to run tools to gather information, configure the network, and provide accurate answers. You MUST use the provided tools for checking interface statuses, retrieving the running configuration, configuring settings, or finding which commands are supported.
 
+** VERY IMPORTANT ** 
+If a configuration has new lines, /n, characters you *MUST* convert this to multi-line Python """ 
+If the configuration looks like this: Action Input: "R1: interface Ethernet0/1\ndescription P2P Link with R2 Eth0/1"
+Convert this to multi-line PYthon line like this 
+""" interface Ethernet0/1
+description P2P Link with R2 Eth0/1
+"""
+
 **Important Guidelines:**
 
 ** Do NOT use `configure terminal` or `conf t`. Directly provide the configuration commands. The system automatically handles configuration mode. **
 ** Action Input: should never been "configure terminal" or "conf t" or "config term" it should only and always be configuration or show commands **
-** Do NOT check configuration commands with `check_supported_command_tool`.**  
 ** If the input is a configuration command (e.g., `ntp server`, `interface`), use `apply_configuration_tool`.**  
-** Only use `check_supported_command_tool` for 'show' or informational commands.**
 ** If you are certain of the command for retrieving information, use the 'run_show_command_tool' to execute it.**
 ** If you need access to the full running configuration, use the 'learn_config_tool' to retrieve it.**
 ** If you are unsure of the command or if there is ambiguity, use the 'check_supported_command_tool' to verify the command or get a list of available commands.**
@@ -421,28 +437,46 @@ agent = create_react_agent(llm, tools, prompt_template)
 # Initialize the agent executor
 agent_executor = AgentExecutor(agent=agent, tools=tools, handle_parsing_errors=True, verbose=True, max_iterations=50)
 
+def reformat_to_multiline(config: str) -> str:
+    """
+    Convert configuration strings containing '\n' into a proper multi-line Python string.
+    """
+    if "\\n" in config or "\n" in config:
+        # Normalize and format the string
+        lines = config.replace("\\n", "\n").strip().split("\n")
+        return "\n".join(lines)  # Return as a multi-line string
+    return config  # Return unchanged if no newlines are found
+
 def handle_command(command: str, shared_context: dict, device_name: str):
     try:
-        input_text = f"{device_name}: {command}"
-
-        # If the command does NOT start with 'show', treat it as a configuration command
+        # Reformat configuration strings for multi-line inputs
         if not command.strip().lower().startswith("show"):
-            logging.info(f"🛠 Applying configuration on {device_name}: {command}")
-            response = apply_configuration_tool(command)
+            logging.info(f"🛠 Reformatting configuration for {device_name}...")
+
+            # Apply transformation to multiline if necessary
+            formatted_command = reformat_to_multiline(command)
+            input_text = f"{device_name}: {formatted_command}"
+
+            # Pass to the configuration tool
+            logging.info(f"🛠 Applying configuration to {device_name}: {formatted_command}")
+            response = apply_configuration_tool(input_text)
         else:
+            # Handle 'show' commands normally
             logging.info(f"🔍 Running show command on {device_name}: {command}")
+            input_text = f"{device_name}: {command.strip()}"
             response = agent_executor.invoke({
                 "input": input_text,
                 "chat_history": shared_context.get("chat_history", ""),
-                "agent_scratchpad": shared_context.get("agent_scratchpad", "")
+                "agent_scratchpad": shared_context.get("agent_scratchpad", ""),
             })
 
+        # Log success
         if response.get("status") == "completed":
             shared_context["queried_devices"].add(device_name)
-            logging.info(f"✅ {device_name} query completed.")
+            logging.info(f"✅ Query completed for {device_name}")
 
         return response
 
     except Exception as e:
         logging.error(f"❌ Error executing command for {device_name}: {str(e)}")
-        return {"status": "error", "error": f"Failed to execute command on {device_name}: {str(e)}"}
+        return {"status": "error", "error": str(e)}
