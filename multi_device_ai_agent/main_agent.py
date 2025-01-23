@@ -2,10 +2,10 @@ import os
 import logging
 import streamlit as st
 from langchain.agents import initialize_agent, Tool
-from langchain.chat_models import ChatOpenAI
-#from langchain_community.llms import Ollama
+#from langchain.chat_models import ChatOpenAI
+from langchain_community.llms import Ollama
 import urllib3
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 
 # Import the tools and prompt templates from your agent scripts
 from R1_agent import tools as r1_tools, prompt_template as r1_prompt
@@ -15,16 +15,16 @@ from SW2_agent import tools as sw2_tools, prompt_template as sw2_prompt
 # Import tools and prompt templates from agent scripts
 from netbox_agent import tools as netbox_tools, prompt_template as netbox_prompt  # Import NetBox agent
 
-# Load environment variables
-load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# # Load environment variables
+# load_dotenv()
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-#llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
-llm = ChatOpenAI(model_name="gpt-4o", temperature=0.3)
+llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
+#llm = ChatOpenAI(model_name="gpt-4o", temperature=0.3)
 
 # Initialize sub-agents for each device
 r1_agent = initialize_agent(

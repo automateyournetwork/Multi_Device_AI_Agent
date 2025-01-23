@@ -4,7 +4,8 @@ import logging
 import requests
 import textwrap
 from langchain.tools import Tool  # Import Tool instead of using @tool decorator
-from langchain.chat_models import ChatOpenAI
+#from langchain.chat_models import ChatOpenAI
+from langchain_community.llms import Ollama
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.prompts import PromptTemplate
 from langchain_core.tools import tool, render_text_description
@@ -15,7 +16,8 @@ from dotenv import load_dotenv
 load_dotenv()
 os.environ['NETBOX_URL']  = os.getenv("NETBOX_BASE_URL")
 os.environ['NETBOX_TOKEN'] = os.getenv("NETBOX_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -267,8 +269,8 @@ def process_agent_response(response):
     return response
 
 # Initialize the LLM (you can replace 'gpt-3.5-turbo' with your desired model)
-#llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
-llm = ChatOpenAI(model_name="gpt-4o", temperature=0.3)
+llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
+#llm = ChatOpenAI(model_name="gpt-4o", temperature=0.3)
 # ✅ Define the tools
 tools = [
     Tool(name="get_netbox_data_tool", func=get_data_directly, description="Fetch data from NetBox using a valid API URL."),

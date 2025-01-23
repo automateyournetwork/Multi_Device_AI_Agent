@@ -20,11 +20,11 @@ RUN echo "==> Install pyATS[fulll].." \
 
 RUN echo "==> Install requirements.." \
   && pip install --break-system-packages -U --quiet langchain_community \
-  && pip install --break-system-packages streamlit --upgrade
-#  && pip install --break-system-packages ollama
+  && pip install --break-system-packages streamlit --upgrade \
+  && pip install --break-system-packages ollama
 
-RUN echo "==> Install openai.." \
-  && pip install --break-system-packages openai
+# RUN echo "==> Install openai.." \
+#   && pip install --break-system-packages openai
 
 COPY /multi_device_ai_agent /multi_device_ai_agent/
 COPY /scripts /scripts/
