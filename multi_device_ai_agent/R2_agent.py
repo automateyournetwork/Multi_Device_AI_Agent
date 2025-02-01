@@ -6,7 +6,7 @@ import textwrap
 import textwrap
 from pyats.topology import loader
 #from langchain_community.llms import Ollama
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool, render_text_description
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.prompts import PromptTemplate
@@ -278,7 +278,7 @@ def learn_logging_tool(dummy_input: str = "") -> dict:
 
 # Initialize the LLM (you can replace 'gpt-3.5-turbo' with your desired model)
 #llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
-llm = ChatOpenAI(model_name="gpt-4o", temperature=0.3)
+llm = ChatOpenAI(model_name="gpt-4o", temperature="0.3")
 
 # Create a list of tools
 #tools = [run_show_command_tool, check_supported_command_tool, apply_configuration_tool, learn_config_tool, learn_logging_tool]

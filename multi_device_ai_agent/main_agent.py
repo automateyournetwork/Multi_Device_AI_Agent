@@ -2,7 +2,7 @@ import os
 import logging
 import streamlit as st
 from langchain.agents import initialize_agent, Tool
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 #from langchain_community.llms import Ollama
 import urllib3
 from dotenv import load_dotenv
@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 #llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
-llm = ChatOpenAI(model_name="gpt-4o", temperature=0.3)
+llm = ChatOpenAI(model_name="gpt-4o", temperature="0.3")
 
 # Initialize sub-agents for each device
 r1_agent = initialize_agent(
@@ -69,19 +69,19 @@ netbox_agent = initialize_agent(
 )
 
 def r1_agent_func(input_text: str) -> str:
-    return r1_agent.run(f"R1: {input_text}")
+    return r1_agent.invoke(f"R1: {input_text}")
 
 def r2_agent_func(input_text: str) -> str:
-    return r2_agent.run(f"R2: {input_text}")
+    return r2_agent.invoke(f"R2: {input_text}")
 
 def sw1_agent_func(input_text: str) -> str:
-    return sw1_agent.run(f"SW1: {input_text}")
+    return sw1_agent.invoke(f"SW1: {input_text}")
 
 def sw2_agent_func(input_text: str) -> str:
-    return sw2_agent.run(f"SW2: {input_text}")
+    return sw2_agent.invoke(f"SW2: {input_text}")
 
 def netbox_agent_func(input_text: str) -> str:
-    return netbox_agent.run(f"NetBox: {input_text}")
+    return netbox_agent.invoke(f"NetBox: {input_text}")
 
 # Define tools for each sub-agent
 r1_tool = Tool(name="R1 Agent", func=r1_agent_func, description="Use for Router R1 commands.")
@@ -125,7 +125,7 @@ if st.button("Send"):
 
         try:
             # 🚀 Invoke the master agent
-            response = master_agent.run(user_input)
+            response = master_agent.invoke(user_input)
 
             # Display results
             st.write(f"**Question:** {user_input}")

@@ -19,7 +19,7 @@ RUN echo "==> Install pyATS[fulll].." \
   && pip install --break-system-packages pyats[full]
 
 RUN echo "==> Install requirements.." \
-  && pip install --break-system-packages -U --quiet langchain_community \
+  && pip install --break-system-packages -U --quiet langchain_community langchain-openai \
   && pip install --break-system-packages streamlit --upgrade
 #  && pip install --break-system-packages ollama
 
