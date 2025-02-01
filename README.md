@@ -24,6 +24,12 @@ Create a .env file in the project root.
 Add your OpenAI API Key:
 
 OPENAI_API_KEY=your_openai_api_key_here
+NETBOX_BASE_URL="https://demo.netbox.dev/"
+NETBOX_TOKEN="<your token>"
+SMTP_RELAY_SERVER=smtp.gmail.com
+SMTP_RELAY_PORT=587
+SMTP_RELAY_USERNAME=<your gmail>
+SMTP_RELAY_PASSWORD=<your application key>
 
 ⚠️ Currently, this project only supports OpenAI models. Open-source model integration is in progress!
 
