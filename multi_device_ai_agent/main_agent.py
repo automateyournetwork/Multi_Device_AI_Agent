@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import streamlit as st
 from langchain.agents import initialize_agent, Tool
@@ -12,8 +13,8 @@ from R1_agent import tools as r1_tools, prompt_template as r1_prompt
 from R2_agent import tools as r2_tools, prompt_template as r2_prompt
 from SW1_agent import tools as sw1_tools, prompt_template as sw1_prompt
 from SW2_agent import tools as sw2_tools, prompt_template as sw2_prompt
-# Import tools and prompt templates from agent scripts
 from netbox_agent import tools as netbox_tools, prompt_template as netbox_prompt  # Import NetBox agent
+from email_agent import send_email_tool  # Import the email sending tool
 
 # Load environment variables
 load_dotenv()
@@ -83,15 +84,57 @@ def sw2_agent_func(input_text: str) -> str:
 def netbox_agent_func(input_text: str) -> str:
     return netbox_agent.invoke(f"NetBox: {input_text}")
 
+def email_agent_func(input_data) -> dict:
+    """
+    Calls the email agent to send an email.
+    Expects a dictionary with 'recipient', 'subject', and 'message' keys.
+    """
+    try:
+        # Ensure input_data is a dictionary
+        if isinstance(input_data, str):
+            try:
+                input_data = json.loads(input_data)  # Attempt to parse JSON string
+            except json.JSONDecodeError:
+                return {"status": "error", "error": "Invalid JSON input. Expected a dictionary."}
+
+        if not isinstance(input_data, dict):
+            return {"status": "error", "error": "Input data must be a dictionary."}
+
+        # Validate required fields
+        required_fields = ["recipient", "subject", "message"]
+        missing_fields = [field for field in required_fields if field not in input_data]
+        if missing_fields:
+            return {"status": "error", "error": f"Missing required fields: {', '.join(missing_fields)}"}
+
+        return send_email_tool.func(input_data)
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
 # Define tools for each sub-agent
-r1_tool = Tool(name="R1 Agent", func=r1_agent_func, description="Use for Router R1 commands.")
-r2_tool = Tool(name="R2 Agent", func=r2_agent_func, description="Use for Router R2 commands.")
-sw1_tool = Tool(name="SW1 Agent", func=sw1_agent_func, description="Use for Switch SW1 commands.")
-sw2_tool = Tool(name="SW2 Agent", func=sw2_agent_func, description="Use for Switch SW2 commands.")
-netbox_tool = Tool(name="NetBox Agent", func=netbox_agent_func, description="Use for NetBox operations and queries.")
+r1_tool = Tool(name="R1 Agent",
+               func=r1_agent_func,
+               description="Use for Router R1 commands.")
+r2_tool = Tool(name="R2 Agent",
+               func=r2_agent_func,
+               description="Use for Router R2 commands.")
+sw1_tool = Tool(name="SW1 Agent",
+                func=sw1_agent_func,
+                description="Use for Switch SW1 commands.")
+sw2_tool = Tool(name="SW2 Agent",
+                func=sw2_agent_func,
+                description="Use for Switch SW2 commands.")
+netbox_tool = Tool(name="NetBox Agent",
+                func=netbox_agent_func,
+                description="Use for NetBox operations and queries.")
+email_tool = Tool(
+    name="Email Agent",
+    func=email_agent_func,  # ✅ Using the updated function
+    description="Send an email with 'recipient', 'subject', and 'message'."
+)
 
 # Create the master tool list
-master_tools = [r1_tool, r2_tool, sw1_tool, sw2_tool, netbox_tool]
+master_tools = [r1_tool, r2_tool, sw1_tool, sw2_tool, netbox_tool, email_tool]
 
 master_agent = initialize_agent(
     tools=master_tools,
@@ -99,6 +142,7 @@ master_agent = initialize_agent(
     agent="zero-shot-react-description",
     verbose=True
 )
+
 logging.info(f"Master agent initialized with tools: {[tool.name for tool in master_tools]}")
 
 # ============================================================
