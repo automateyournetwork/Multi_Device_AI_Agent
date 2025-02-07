@@ -2,19 +2,18 @@ import os
 import json
 import logging
 import streamlit as st
+from tempfile import NamedTemporaryFile
 from langchain.agents import initialize_agent, Tool
 from langchain_openai import ChatOpenAI
-#from langchain_community.llms import Ollama
-import urllib3
 from dotenv import load_dotenv
-
-# Import the tools and prompt templates from your agent scripts
+import urllib3
 from R1_agent import tools as r1_tools, prompt_template as r1_prompt
 from R2_agent import tools as r2_tools, prompt_template as r2_prompt
 from SW1_agent import tools as sw1_tools, prompt_template as sw1_prompt
 from SW2_agent import tools as sw2_tools, prompt_template as sw2_prompt
-from netbox_agent import tools as netbox_tools, prompt_template as netbox_prompt  # Import NetBox agent
-from email_agent import send_email_tool  # Import the email sending tool
+from netbox_agent import tools as netbox_tools, prompt_template as netbox_prompt
+from email_agent import send_email_tool  
+from image_agent import process_image_analysis  
 
 # Load environment variables
 load_dotenv()
@@ -24,51 +23,16 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 logging.basicConfig(level=logging.INFO)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-#llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
-llm = ChatOpenAI(model_name="gpt-4o", temperature="0.3")
+llm = ChatOpenAI(model_name="gpt-4o", temperature=0.3)
 
-# Initialize sub-agents for each device
-r1_agent = initialize_agent(
-    tools=r1_tools,
-    llm=llm,
-    agent='zero-shot-react-description',
-    prompt=r1_prompt,
-    verbose=True
-)
+# Initialize sub-agents
+r1_agent = initialize_agent(tools=r1_tools, llm=llm, agent='zero-shot-react-description', prompt=r1_prompt, verbose=True)
+r2_agent = initialize_agent(tools=r2_tools, llm=llm, agent='zero-shot-react-description', prompt=r2_prompt, verbose=True)
+sw1_agent = initialize_agent(tools=sw1_tools, llm=llm, agent='zero-shot-react-description', prompt=sw1_prompt, verbose=True)
+sw2_agent = initialize_agent(tools=sw2_tools, llm=llm, agent='zero-shot-react-description', prompt=sw2_prompt, verbose=True)
+netbox_agent = initialize_agent(tools=netbox_tools, llm=llm, agent='zero-shot-react-description', prompt=netbox_prompt, verbose=True)
 
-r2_agent = initialize_agent(
-    tools=r2_tools,
-    llm=llm,
-    agent='zero-shot-react-description',
-    prompt=r2_prompt,
-    verbose=True
-)
-
-sw1_agent = initialize_agent(
-    tools=sw1_tools,
-    llm=llm,
-    agent='zero-shot-react-description',
-    prompt=sw1_prompt,
-    verbose=True
-)
-
-sw2_agent = initialize_agent(
-    tools=sw2_tools,
-    llm=llm,
-    agent='zero-shot-react-description',
-    prompt=sw2_prompt,
-    verbose=True
-)
-
-# Initialize the NetBox agent
-netbox_agent = initialize_agent(
-    tools=netbox_tools,
-    llm=llm,
-    agent='zero-shot-react-description',
-    prompt=netbox_prompt,
-    verbose=True
-)
-
+# Agent functions
 def r1_agent_func(input_text: str) -> str:
     return r1_agent.invoke(f"R1: {input_text}")
 
@@ -85,107 +49,99 @@ def netbox_agent_func(input_text: str) -> str:
     return netbox_agent.invoke(f"NetBox: {input_text}")
 
 def email_agent_func(input_data) -> dict:
-    """
-    Calls the email agent to send an email.
-    Expects a dictionary with 'recipient', 'subject', and 'message' keys.
-    """
+    """Sends an email report via the email agent."""
     try:
-        # Ensure input_data is a dictionary
         if isinstance(input_data, str):
-            try:
-                input_data = json.loads(input_data)  # Attempt to parse JSON string
-            except json.JSONDecodeError:
-                return {"status": "error", "error": "Invalid JSON input. Expected a dictionary."}
-
-        if not isinstance(input_data, dict):
-            return {"status": "error", "error": "Input data must be a dictionary."}
-
-        # Validate required fields
-        required_fields = ["recipient", "subject", "message"]
-        missing_fields = [field for field in required_fields if field not in input_data]
-        if missing_fields:
-            return {"status": "error", "error": f"Missing required fields: {', '.join(missing_fields)}"}
-
+            input_data = json.loads(input_data)
+        if not isinstance(input_data, dict) or not all(k in input_data for k in ["recipient", "subject", "message"]):
+            return {"status": "error", "error": "Invalid email data format"}
         return send_email_tool.func(input_data)
-
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
-# Define tools for each sub-agent
-r1_tool = Tool(name="R1 Agent",
-               func=r1_agent_func,
-               description="Use for Router R1 commands.")
-r2_tool = Tool(name="R2 Agent",
-               func=r2_agent_func,
-               description="Use for Router R2 commands.")
-sw1_tool = Tool(name="SW1 Agent",
-                func=sw1_agent_func,
-                description="Use for Switch SW1 commands.")
-sw2_tool = Tool(name="SW2 Agent",
-                func=sw2_agent_func,
-                description="Use for Switch SW2 commands.")
-netbox_tool = Tool(name="NetBox Agent",
-                func=netbox_agent_func,
-                description="Use for NetBox operations and queries.")
-email_tool = Tool(
-    name="Email Agent",
-    func=email_agent_func,  # ✅ Using the updated function
-    description="Send an email with 'recipient', 'subject', and 'message'."
-)
+def image_agent_func(input_data):
+    """
+    Processes an image along with a text prompt for multimodal AI.
+    """
+    # ✅ Fix: Ensure correct keys exist
+    if not isinstance(input_data, dict) or "image_path" not in input_data or "user_prompt" not in input_data:
+        return "Invalid image analysis request. Missing 'image_path' or 'user_prompt'."
 
-# Create the master tool list
-master_tools = [r1_tool, r2_tool, sw1_tool, sw2_tool, netbox_tool, email_tool]
+    return process_image_analysis(
+        image_path=input_data["image_path"],  # ✅ Correct parameter name
+        user_prompt=input_data["user_prompt"]
+    )
 
-master_agent = initialize_agent(
-    tools=master_tools,
-    llm=llm,
-    agent="zero-shot-react-description",
-    verbose=True
-)
+# Define LangChain Tools
+r1_tool = Tool(name="R1 Agent", func=r1_agent_func, description="Use for Router R1 commands.")
+r2_tool = Tool(name="R2 Agent", func=r2_agent_func, description="Use for Router R2 commands.")
+sw1_tool = Tool(name="SW1 Agent", func=sw1_agent_func, description="Use for Switch SW1 commands.")
+sw2_tool = Tool(name="SW2 Agent", func=sw2_agent_func, description="Use for Switch SW2 commands.")
+netbox_tool = Tool(name="NetBox Agent", func=netbox_agent_func, description="Use for NetBox operations and queries.")
+email_tool = Tool(name="Email Agent", func=email_agent_func, description="Send an email with 'recipient', 'subject', and 'message'.")
+image_tool = Tool(name="Image Analysis Agent", func=image_agent_func, description="Analyze an image based on a user prompt.")
+
+# Create Master Agent
+master_tools = [r1_tool, r2_tool, sw1_tool, sw2_tool, netbox_tool, email_tool, image_tool]
+master_agent = initialize_agent(tools=master_tools, llm=llm, agent="zero-shot-react-description", verbose=True)
 
 logging.info(f"Master agent initialized with tools: {[tool.name for tool in master_tools]}")
 
 # ============================================================
-# Streamlit UI
+# **Streamlit UI**
 # ============================================================
 
-# Set up Streamlit UI
-st.title("Infrastructure as Agents - Cisco IOS")
-st.write("Operate your network with natural language")
+# Define navigation pages
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Upload Image", "Chat with AI"])
 
-user_input = st.text_input("Enter your question:")
+# **PAGE 1: Image Upload**
+if page == "Upload Image":
+    st.title("Upload an Image for AI Analysis (Optional)")
+    
+    uploaded_image = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg"])
+    
+    if uploaded_image:
+        # Save uploaded image
+        temp_file = NamedTemporaryFile(delete=False, suffix=".jpg")
+        temp_file.write(uploaded_image.getbuffer())
+        temp_image_path = temp_file.name
 
-# Initialize chat state
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = ""
+        # Store image path in session state
+        st.session_state["image_path"] = temp_image_path
+        st.success("Image uploaded successfully. Proceed to Chat.")
 
-if "conversation" not in st.session_state:
-    st.session_state.conversation = []
+# **PAGE 2: Chat with AI**
+if page == "Chat with AI":
+    st.title("Chat with the AI Agent")
+    st.write("Ask network-related questions or analyze uploaded images.")
 
-# Button to send input
-if st.button("Send"):
-    if user_input:
-        st.session_state.conversation.append({"role": "user", "content": user_input})
+    user_input = st.text_area("Enter your question or description:")
 
-        try:
-            # 🚀 Invoke the master agent
-            response = master_agent.invoke(user_input)
+    if st.button("Send"):
+        if not user_input:
+            st.warning("Please enter a question.")
+        else:
+            if "image_path" in st.session_state and st.session_state["image_path"]:
+                image_path = st.session_state["image_path"]
+    
+                # ✅ Fix key name: Pass image_path (NOT image_url)
+                response = image_agent_func({"image_path": image_path, "user_prompt": user_input})
+    
+                st.image(image_path, caption="Analyzed Image", use_container_width=True)  # ✅ Updated param
+    
+            else:
+                response = master_agent.invoke(user_input)  # ✅ Uses Text Agent
+    
+            st.write(f"**Response:** {response}")
 
-            # Display results
-            st.write(f"**Question:** {user_input}")
-            st.write(f"**Answer:** {response}")
-
-            # Update conversation history
+            # Save conversation history
+            if "conversation" not in st.session_state:
+                st.session_state.conversation = []
             st.session_state.conversation.append({"role": "assistant", "content": response})
-            st.session_state.chat_history = "\n".join(
-                [f"{entry['role'].capitalize()}: {entry['content']}" for entry in st.session_state.conversation]
-            )
 
-        except Exception as e:
-            st.write(f"An error occurred: {str(e)}")
-
-# Display conversation history
-if st.session_state.conversation:
-    st.write("## Conversation History")
-    for entry in st.session_state.conversation:
-        st.write(f"**{entry['role'].capitalize()}:** {entry['content']}")
+    # Display Conversation History
+    if "conversation" in st.session_state:
+        st.write("## Conversation History")
+        for entry in st.session_state.conversation:
+            st.write(f"**{entry['role'].capitalize()}:** {entry['content']}")
