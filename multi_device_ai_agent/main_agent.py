@@ -98,9 +98,9 @@ page = st.sidebar.radio("Go to", ["Upload Image", "Chat with AI"])
 # **PAGE 1: Image Upload**
 if page == "Upload Image":
     st.title("Upload an Image for AI Analysis (Optional)")
-    
+
     uploaded_image = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg"])
-    
+
     if uploaded_image:
         # Save uploaded image
         temp_file = NamedTemporaryFile(delete=False, suffix=".jpg")
@@ -109,7 +109,7 @@ if page == "Upload Image":
 
         # Store image path in session state
         st.session_state["image_path"] = temp_image_path
-        st.success("Image uploaded successfully. Proceed to Chat.")
+        st.success("✅ Image uploaded successfully. Proceed to Chat.")
 
 # **PAGE 2: Chat with AI**
 if page == "Chat with AI":
@@ -120,28 +120,31 @@ if page == "Chat with AI":
 
     if st.button("Send"):
         if not user_input:
-            st.warning("Please enter a question.")
+            st.warning("⚠️ Please enter a question.")
         else:
+            input_data = user_input  # Start with user query
+    
+            # 🚀 Check if image exists & explicitly invoke Image Analysis Agent
             if "image_path" in st.session_state and st.session_state["image_path"]:
                 image_path = st.session_state["image_path"]
     
-                # ✅ Fix key name: Pass image_path (NOT image_url)
-                response = image_agent_func({"image_path": image_path, "user_prompt": user_input})
+                # ✅ Call the Image Analysis Agent **before** master_agent
+                image_response = image_agent_func({"image_path": image_path, "user_prompt": user_input})
     
-                st.image(image_path, caption="Analyzed Image", use_container_width=True)  # ✅ Updated param
+                # ✅ Format `input_data` to include the image analysis for `master_agent`
+                input_data = f"{user_input}\n\n📷 Image Analysis:\n{image_response}"
     
-            else:
-                response = master_agent.invoke(user_input)  # ✅ Uses Text Agent
+                # Display Image
+                st.image(image_path, caption="📷 Analyzed Image", use_container_width=True)
     
+            # 🚀 Pass formatted input to `master_agent.invoke()`
+            response = master_agent.invoke(input_data)
+    
+            # Display response
             st.write(f"**Response:** {response}")
-
+    
             # Save conversation history
             if "conversation" not in st.session_state:
                 st.session_state.conversation = []
             st.session_state.conversation.append({"role": "assistant", "content": response})
-
-    # Display Conversation History
-    if "conversation" in st.session_state:
-        st.write("## Conversation History")
-        for entry in st.session_state.conversation:
-            st.write(f"**{entry['role'].capitalize()}:** {entry['content']}")
+    
