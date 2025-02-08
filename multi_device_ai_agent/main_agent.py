@@ -123,28 +123,31 @@ if page == "Chat with AI":
             st.warning("⚠️ Please enter a question.")
         else:
             input_data = user_input  # Start with user query
-    
+
             # 🚀 Check if image exists & explicitly invoke Image Analysis Agent
             if "image_path" in st.session_state and st.session_state["image_path"]:
                 image_path = st.session_state["image_path"]
-    
+
                 # ✅ Call the Image Analysis Agent **before** master_agent
                 image_response = image_agent_func({"image_path": image_path, "user_prompt": user_input})
-    
+
                 # ✅ Format `input_data` to include the image analysis for `master_agent`
                 input_data = f"{user_input}\n\n📷 Image Analysis:\n{image_response}"
-    
+
                 # Display Image
                 st.image(image_path, caption="📷 Analyzed Image", use_container_width=True)
-    
+
             # 🚀 Pass formatted input to `master_agent.invoke()`
             response = master_agent.invoke(input_data)
-    
-            # Display response
-            st.write(f"**Response:** {response}")
-    
+
+            # ✅ Extract only the relevant response content
+            response_text = response.get("output", "No valid response received.")
+
+            # ✅ Format and display output
+            st.write(f"### **Question:** {user_input}")
+            st.write(f"### **Response:** {response_text}")
+
             # Save conversation history
             if "conversation" not in st.session_state:
                 st.session_state.conversation = []
-            st.session_state.conversation.append({"role": "assistant", "content": response})
-    
+            st.session_state.conversation.append({"role": "assistant", "content": response_text})
