@@ -140,7 +140,7 @@ def execute_show_run():
         testbed = loader.load('testbed.yaml')
 
         # Access the device from the testbed
-        device = testbed.devices['S1']
+        device = testbed.devices['SW1']
 
         # Connect to the device
         logger.info("Connecting to device...")
@@ -168,7 +168,7 @@ def execute_show_logging():
         testbed = loader.load('testbed.yaml')
 
         # Access the device from the testbed
-        device = testbed.devices['S1']
+        device = testbed.devices['SW1']
 
         # Connect to the device
         logger.info("Connecting to device...")
@@ -188,12 +188,37 @@ def execute_show_logging():
         # Handle exceptions and provide error information
         return {"error": str(e)}
 
+def run_ping_command(command: str, device_name: str):
+    try:
+        disallowed_modifiers = ['|', 'include', 'exclude', 'begin', 'redirect', '>', '<']
+        for modifier in command.split():
+            if modifier in disallowed_modifiers:
+                return {"status": "error", "error": f"Command '{command}' contains disallowed modifier '{modifier}'."}
+
+        # Load testbed and target device dynamically
+        testbed = loader.load('testbed.yaml')
+        device = testbed.devices.get(device_name)
+
+        if not device:
+            return {"status": "error", "error": f"Device '{device_name}' not found in testbed."}
+
+        if not device.is_connected():
+            device.connect()
+
+        parsed_output = device.parse(command)
+        device.disconnect()
+
+        return {"status": "completed", "device": device_name, "output": parsed_output}
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
 @tool("run_show_command_tool")
 def run_show_command_tool(input_text: str) -> dict:
     """
     Execute a 'show' command on a specified device.
     Input format: "<device_name>: <command>"
-    Example: "S1: show ip interface brief"
+    Example: "SW1: show ip interface brief"
     """
     try:
         # Split input into device name and command
@@ -239,7 +264,7 @@ def apply_configuration_tool(input_text: str) -> dict:
 
     Input format: "<device_name>: <configuration_commands>"
     Example:
-        "S1: ntp server 192.168.100.100"
+        "SW1: ntp server 192.168.100.100"
         or
         "SW2: interface loopback 100\ndescription AI Created\nip address 10.10.100.100 255.255.255.0\nno shutdown"
     """
@@ -272,6 +297,26 @@ def learn_logging_tool(dummy_input: str = "") -> dict:
     """Execute show logging on the router using pyATS and return it as raw text."""
     return execute_show_logging()
 
+# Define the custom tool for ping
+@tool("run_ping_command_tool")
+def run_ping_command_tool(input_text: str) -> dict:
+    """
+    Execute a 'ping' command on a specified device.
+    Input format: "<device_name>: <ping_command>"
+    Example: "SW1: ping 8.8.8.8"
+    """
+    try:
+        # Split input into device name and ping command
+        device_name, command = input_text.split(":", 1)
+        device_name = device_name.strip()
+        command = command.strip()
+        
+        return run_ping_command(command, device_name)
+    except ValueError:
+        return {"status": "error", "error": "Invalid input format. Use '<device_name>: <ping_command>'."}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
 # ============================================================
 # Define the agent with a custom prompt template
 # ============================================================
@@ -282,7 +327,7 @@ llm = ChatOpenAI(model_name="gpt-4o", temperature="0.3")
 
 # Create a list of tools
 #tools = [run_show_command_tool, check_supported_command_tool, apply_configuration_tool, learn_config_tool, learn_logging_tool]
-tools = [run_show_command_tool, apply_configuration_tool, learn_config_tool, learn_logging_tool]
+tools = [run_show_command_tool, apply_configuration_tool, learn_config_tool, learn_logging_tool, run_ping_command_tool]
 
 # Render text descriptions for the tools for inclusion in the prompt
 tool_descriptions = render_text_description(tools)
@@ -300,10 +345,10 @@ Assistant is a network assistant with the capability to run tools to gather info
 
 ** VERY IMPORTANT ** 
 If a configuration has new lines, /n, characters you *MUST* convert this to multi-line Python """ 
-If the configuration looks like this: Action Input: "S1: interface Ethernet0/1\ndescription P2P Link with R2 Eth0/1"
-Convert this to multi-line PYthon line like this 
+If the configuration looks like this: Action Input: "SW1: interface Ethernet0/1\ndescription P2P Link with SW1 Eth0/1"
+Convert this to multi-line Python line like this 
 """ interface Ethernet0/1
-description P2P Link with R2 Eth0/1
+description P2P Link with SW1 Eth0/1
 """
 
 **Important Guidelines:**
@@ -325,6 +370,15 @@ description P2P Link with R2 Eth0/1
 - If you need access to the full running configuration, use 'learn_config_tool'.
 - If there is any doubt or ambiguity, always check the command first with the 'check_supported_command_tool'.
 - If you need to apply a configuration change, use 'apply_configuration_tool' with the appropriate configuration commands.
+
+** Handling PING Commands **  
+If the user asks you to **ping an IP address from a specific device**, convert the request into the correct `ping` command before using the `ping_tool`.  
+
+** Formatting Rules for Ping Requests: **  
+- If a source interface is mentioned, use `ping {destination} source {source_interface} repeat {count}`  
+- If no source interface is given, use `ping {destination} repeat {count}`  
+- Default **repeat count** is **5** unless specified.  
+- Ensure the action input follows the format: `"SW1: <destination> [source_interface] [repeat_count]"`  
 
 **TOOLS:**  
 {tools}
@@ -391,6 +445,16 @@ When you have a response to say to the Human, or if you do not need to use a too
 
 Thought: Do I need to use a tool? No  
 Final Answer: [your response here]
+
+User: *"Can you ping 8.8.8.8 from SW1?"*  
+Thought: Do I need to use a tool? Yes  
+Action: ping_tool  
+Action Input: "SW1: 8.8.8.8 5"  
+
+User: *"Ping 10.10.10.1 from SW1 using GigabitEthernet0/1 for 3 times."*  
+Thought: Do I need to use a tool? Yes  
+Action: ping_tool  
+Action Input: "SW1: 10.10.10.1 GigabitEthernet0/1 3"
 
 Correct Formatting is Essential: Ensure that every response follows the format strictly to avoid errors.
 

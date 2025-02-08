@@ -287,14 +287,8 @@ prompt_template = PromptTemplate(
     Always use the API URL provided in the Action Input without modifying it or validating it.
 
     **Important Formatting Guidelines for Configuration Outputs:**
-    - If the output contains newlines (`\n`), return the configuration as a Python multi-line string.
-    - Example:
-        """
-        interface Ethernet0/1
-        description P2P Link with R2 Eth0/1
-        no shutdown
-        """
-
+    Never add %22%0A or anything else appending to the NetBox URLs 
+    
     **TOOLS:**  
     {tools}
 
