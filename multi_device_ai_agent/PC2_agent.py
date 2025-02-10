@@ -32,14 +32,10 @@ SUPPORTED_LINUX_COMMANDS = [
 
 def run_linux_command(command: str, device_name: str):
     """
-    Execute a supported Linux command on a specified device (e.g., PC1).
+    Execute a Linux command on a specified device (e.g., PC1).
+    Uses `device.parse(command)` if a parser exists, otherwise falls back to `device.execute(command)`.
     """
     try:
-        disallowed_modifiers = ['|', '>', '<']
-        for modifier in command.split():
-            if modifier in disallowed_modifiers:
-                return {"status": "error", "error": f"Command '{command}' contains disallowed modifier '{modifier}'."}
-
         # Load testbed and target Linux device dynamically
         logger.info("Loading testbed...")
         testbed = loader.load('testbed.yaml')
@@ -54,19 +50,30 @@ def run_linux_command(command: str, device_name: str):
             logger.info(f"Connecting to {device_name} via SSH...")
             device.connect()
 
-        # Ensure command is supported
-        parser = get_parser(command, device)
-        if parser is None:
-            return {"status": "error", "error": f"No parser available for command: {command}"}
+        # Handle redirection (`>`) and pipes (`|`) using `sh -c`
+        if ">" in command or "|" in command:
+            logger.info(f"Detected redirection or pipe in command: {command}")
+            command = f'sh -c "{command}"'  # Use double quotes to avoid single quote issues
 
-        logger.info(f"Executing and parsing command on {device_name}: {command}")
-        parsed_output = device.parse(command)
+        try:
+            # Attempt to parse command
+            parser = get_parser(command, device)
+
+            if parser:
+                logger.info(f"Parsing output for command: {command}")
+                output = device.parse(command)
+            else:
+                raise ValueError("No parser available")  # Force fallback to execute()
+
+        except Exception as e:
+            logger.warning(f"No parser found for command: {command}. Using `execute` instead. Error: {e}")
+            output = device.execute(command)  # 🚀 Fallback to `execute()`
 
         # Disconnect after execution
         logger.info(f"Disconnecting from {device_name}...")
         device.disconnect()
 
-        return {"status": "completed", "device": device_name, "output": parsed_output}
+        return {"status": "completed", "device": device_name, "output": output}
 
     except Exception as e:
         logger.error(f"Error executing command on {device_name}: {str(e)}")
@@ -81,32 +88,48 @@ def run_linux_command_tool(input_text: str) -> dict:
     """
     try:
         device_name, command = input_text.split(":", 1)
-        device_name = device_name.strip()
-        command = command.strip()
-        
-        return run_linux_command(command, device_name)
+        return run_linux_command(command.strip(), device_name.strip())
     except ValueError:
         return {"status": "error", "error": "Invalid input format. Use '<device_name>: <command>'."}
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
+
+@tool("execute_linux_command_tool")
+def execute_linux_command_tool(input_text: str) -> dict:
+    """
+    Execute any arbitrary Linux command (including unsupported ones).
+    Input format: "<device_name>: <command>"
+    Example: "PC1: uname -a"
+    """
+    try:
+        device_name, command = input_text.split(":", 1)
+        return run_linux_command(command.strip(), device_name.strip())  # Same function as above
+    except ValueError:
+        return {"status": "error", "error": "Invalid input format. Use '<device_name>: <command>'."}
 
 # Define the LLM model
 llm = ChatOpenAI(model_name="gpt-4o", temperature=0.6)
 
 # Create tool descriptions
-tools = [run_linux_command_tool]
+tools = [run_linux_command_tool, execute_linux_command_tool]
 tool_descriptions = render_text_description(tools)
 
 # Define the prompt template for Linux commands
 template = '''
-Assistant is a Linux system administrator AI agent.
+Assistant is a Linux system administrator AI agent. This is an Alpine Linux system so only use Alpine Linux supported commands.
 
-Assistant is designed to assist with Linux system commands, monitoring, and diagnostics. It can run system commands like `ifconfig`, `ip route show`, `netstat`, `ps -ef`, and `ls -l` on Linux hosts using the provided tools.
+Redirecting output using ">" is allowed. Please do so to create files.
+
+Assistant is designed to assist with Linux system commands, monitoring, and diagnostics. 
+It can run system commands like `ifconfig`, `ip route show`, `netstat`, `ps -ef`, and `ls -l` 
+on Linux hosts using the provided tools.
+
+When creating text files use echo and the > to redirect the output to the file. Do not use tee use echo > to redirect. 
 
 **INSTRUCTIONS:**
 - Assistant can **only** run supported commands: {tool_names}
-- If a command is not supported, inform the user.
-- To retrieve system information, use `run_linux_command_tool`.
+- If a command is not supported by a parser, use `execute_linux_command_tool` to run it as a raw command.
+- To retrieve system information, use `run_linux_command_tool` if a parser exists.
+- If unsure, first attempt `run_linux_command_tool`, then fall back to `execute_linux_command_tool`.
+- Use echo > to create text files. Do no use tee.
 
 **TOOLS:**  
 {tools}
@@ -120,22 +143,40 @@ To use a tool, follow this format:
 Thought: Do I need to use a tool? Yes  
 Action: the action to take, should be one of [{tool_names}]  
 Action Input: the input to the action  
-Observation: the result of the action
+Observation: the result of the action  
 Final Answer: [Answer to the User]  
 
-If the first tool provides a valid command, you MUST immediately run the 'run_show_command_tool' without waiting for another input. Follow the flow like this:
+If the first tool provides a valid command, you MUST immediately run the 'run_linux_command_tool' 
+without waiting for another input. If the command is unsupported, use 'execute_linux_command_tool'.  
+Follow the flow like this:
 
-Example:
+### **Example Usage**
 
-**FORMAT:**
+#### **If command has a parser (`ifconfig`)**
 Thought: Do I need to use a tool? Yes  
 Action: run_linux_command_tool  
-Action Input: "<device_name>: <command>"  
+Action Input: "PC1: ifconfig"  
 Observation: [parsed output here]  
+Final Answer: [Formatted response]
 
-If a response is ready, return:
-Thought: Do I need to use a tool? No  
-Final Answer: [your response here]
+#### **If command does NOT have a parser (`uname -a`)**
+Thought: Do I need to use a tool? Yes  
+Action: execute_linux_command_tool  
+Action Input: "PC1: uname -a"  
+Observation: [raw output from `device.execute`]  
+Final Answer: [Formatted response]
+
+#### ** If I am asked to create a file:
+Thought: Do I need to use a tool? Yes  
+Action: execute_linux_command_tool  
+Action Input: "sudo echo 'Hello World' > CreatedbyAI.txt"
+Observation: [raw output from `device.execute`]  
+Final Answer: [Formatted response]
+
+#### **⚠️ IMPORTANT: FILE CREATION RULES**
+🚀 **ONLY use `echo >` for file creation. No other method is allowed.**
+❌ **Never use:** tee or bash
+✅ **Always use:** `echo and the redirect >`
 
 Begin!
 
