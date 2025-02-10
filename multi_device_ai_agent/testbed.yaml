@@ -64,3 +64,35 @@ devices:
         port: 22
         arguments:
           connection_timeout: 360
+  PC1:
+    alias: "Sandbox PC1"
+    type: "host"
+    os: "linux"
+    platform: alpine
+    credentials:
+      default:
+        username: cisco
+        password: cisco
+    connections:
+      cli:
+        protocol: ssh
+        ip: 10.10.20.177
+        port: 22
+        arguments:
+          connection_timeout: 360
+  PC2:
+    alias: "Sandbox PC2"
+    type: "host"
+    os: "linux"
+    platform: alpine
+    credentials:
+      default:
+        username: cisco
+        password: cisco
+    connections:
+      cli:
+        protocol: ssh
+        ip: 10.10.20.178
+        port: 22
+        arguments:
+          connection_timeout: 360                  

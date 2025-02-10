@@ -268,7 +268,7 @@ def process_agent_response(response):
 
 # Initialize the LLM (you can replace 'gpt-3.5-turbo' with your desired model)
 #llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
-llm = ChatOpenAI(model_name="gpt-4o", temperature="0.3")
+llm = ChatOpenAI(model_name="gpt-4o", temperature="0.6")
 # ✅ Define the tools
 tools = [
     Tool(name="get_netbox_data_tool", func=get_data_directly, description="Fetch data from NetBox using a valid API URL."),
