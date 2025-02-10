@@ -11,6 +11,9 @@ from R1_agent import tools as r1_tools, prompt_template as r1_prompt
 from R2_agent import tools as r2_tools, prompt_template as r2_prompt
 from SW1_agent import tools as sw1_tools, prompt_template as sw1_prompt
 from SW2_agent import tools as sw2_tools, prompt_template as sw2_prompt
+from PC1_agent import tools as pc1_tools, prompt_template as pc1_prompt
+from PC2_agent import tools as pc2_tools, prompt_template as pc2_prompt
+
 from netbox_agent import tools as netbox_tools, prompt_template as netbox_prompt
 from email_agent import send_email_tool  
 from image_agent import process_image_analysis  
@@ -23,14 +26,16 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 logging.basicConfig(level=logging.INFO)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-llm = ChatOpenAI(model_name="gpt-4o", temperature=0.3)
+llm = ChatOpenAI(model_name="gpt-4o", temperature="0.6")
 
 # Initialize sub-agents
 r1_agent = initialize_agent(tools=r1_tools, llm=llm, agent='zero-shot-react-description', prompt=r1_prompt, verbose=True)
 r2_agent = initialize_agent(tools=r2_tools, llm=llm, agent='zero-shot-react-description', prompt=r2_prompt, verbose=True)
 sw1_agent = initialize_agent(tools=sw1_tools, llm=llm, agent='zero-shot-react-description', prompt=sw1_prompt, verbose=True)
 sw2_agent = initialize_agent(tools=sw2_tools, llm=llm, agent='zero-shot-react-description', prompt=sw2_prompt, verbose=True)
-netbox_agent = initialize_agent(tools=netbox_tools, llm=llm, agent='zero-shot-react-description', prompt=netbox_prompt, verbose=True)
+netbox_agent = initialize_agent(tools=netbox_tools, llm=llm, agent='structured-chat-zero-shot-react-description', prompt=netbox_prompt, verbose=True)
+pc1_agent = initialize_agent(tools=pc1_tools, llm=llm, agent='zero-shot-react-description', prompt=pc1_prompt, verbose=True)
+pc2_agent = initialize_agent(tools=pc2_tools, llm=llm, agent='zero-shot-react-description', prompt=pc2_prompt, verbose=True)
 
 # Agent functions
 def r1_agent_func(input_text: str) -> str:
@@ -44,6 +49,12 @@ def sw1_agent_func(input_text: str) -> str:
 
 def sw2_agent_func(input_text: str) -> str:
     return sw2_agent.invoke(f"SW2: {input_text}")
+
+def pc1_agent_func(input_text: str) -> str:
+    return pc1_agent.invoke(f"PC1: {input_text}")
+
+def pc2_agent_func(input_text: str) -> str:
+    return pc1_agent.invoke(f"PC2: {input_text}")
 
 def netbox_agent_func(input_text: str) -> str:
     return netbox_agent.invoke(f"NetBox: {input_text}")
@@ -80,9 +91,11 @@ sw2_tool = Tool(name="SW2 Agent", func=sw2_agent_func, description="Use for Swit
 netbox_tool = Tool(name="NetBox Agent", func=netbox_agent_func, description="Use for NetBox operations and queries.")
 email_tool = Tool(name="Email Agent", func=email_agent_func, description="Send an email with 'recipient', 'subject', and 'message'.")
 image_tool = Tool(name="Image Analysis Agent", func=image_agent_func, description="Analyze an image based on a user prompt.")
+pc1_tool = Tool(name="PC1 Agent", func=pc1_agent_func, description="Use for Linux commands on PC1.")
+pc2_tool = Tool(name="PC2 Agent", func=pc2_agent_func, description="Use for Linux commands on PC2.")
 
 # Create Master Agent
-master_tools = [r1_tool, r2_tool, sw1_tool, sw2_tool, netbox_tool, email_tool, image_tool]
+master_tools = [r1_tool, r2_tool, sw1_tool, sw2_tool, netbox_tool, email_tool, image_tool, pc1_tool, pc2_tool]
 master_agent = initialize_agent(tools=master_tools, llm=llm, agent="zero-shot-react-description", verbose=True)
 
 logging.info(f"Master agent initialized with tools: {[tool.name for tool in master_tools]}")
