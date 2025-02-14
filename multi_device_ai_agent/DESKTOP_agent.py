@@ -1,4 +1,5 @@
 import os
+import time
 import json
 import logging
 from pyats.topology import loader
@@ -30,13 +31,15 @@ SUPPORTED_LINUX_COMMANDS = [
     "route {flag}"
 ]
 
+import time
+
 def run_linux_command(command: str, device_name: str):
     """
-    Execute a Linux command on a specified device (e.g., PC1).
+    Execute a Linux command on a specified device (e.g., DESKTOP).
     Uses `device.parse(command)` if a parser exists, otherwise falls back to `device.execute(command)`.
+    Ensures `apt install` commands finish before proceeding.
     """
     try:
-        # Load testbed and target Linux device dynamically
         logger.info("Loading testbed...")
         testbed = loader.load('testbed.yaml')
 
@@ -45,31 +48,31 @@ def run_linux_command(command: str, device_name: str):
 
         device = testbed.devices[device_name]
 
-        # Establish connection if not already connected
         if not device.is_connected():
             logger.info(f"Connecting to {device_name} via SSH...")
             device.connect()
 
-        # Handle redirection (`>`) and pipes (`|`) using `sh -c`
-        if ">" in command or "|" in command:
-            logger.info(f"Detected redirection or pipe in command: {command}")
-            command = f'sh -c "{command}"'  # Use double quotes to avoid single quote issues
+        logger.info(f"Executing command on {device_name}: {command}")
 
-        try:
-            # Attempt to parse command
-            parser = get_parser(command, device)
+        # 🚀 Run installation command with a long timeout
+        output = device.execute(command, timeout=300)  # Wait up to 5 minutes if needed
 
-            if parser:
-                logger.info(f"Parsing output for command: {command}")
-                output = device.parse(command)
+        # If installing a package, wait for confirmation
+        if "apt install" in command or "apt-get install" in command:
+            package_name = command.split("install -y")[-1].strip()  # Extract package name
+            logger.info(f"Package installation detected: {package_name}")
+
+            # 🚀 Loop until package is confirmed installed
+            for _ in range(12):  # Check every 10 sec for up to 2 minutes
+                check_output = device.execute(f"dpkg -l | grep {package_name}", timeout=10)
+                if package_name in check_output:
+                    logger.info(f"{package_name} successfully installed.")
+                    break
+                logger.info(f"Waiting for {package_name} to finish installing...")
+                time.sleep(10)
             else:
-                raise ValueError("No parser available")  # Force fallback to execute()
+                logger.warning(f"Timeout waiting for {package_name} installation.")
 
-        except Exception as e:
-            logger.warning(f"No parser found for command: {command}. Using `execute` instead. Error: {e}")
-            output = device.execute(command)  # 🚀 Fallback to `execute()`
-
-        # Disconnect after execution
         logger.info(f"Disconnecting from {device_name}...")
         device.disconnect()
 
@@ -84,7 +87,7 @@ def run_linux_command_tool(input_text: str) -> dict:
     """
     Execute a supported Linux command on a specified host.
     Input format: "<device_name>: <command>"
-    Example: "PC1: ifconfig -a"
+    Example: "DESKTOP: ifconfig -a"
     """
     try:
         device_name, command = input_text.split(":", 1)
@@ -97,7 +100,7 @@ def execute_linux_command_tool(input_text: str) -> dict:
     """
     Execute any arbitrary Linux command (including unsupported ones).
     Input format: "<device_name>: <command>"
-    Example: "PC1: uname -a"
+    Example: "DESKTOP: uname -a"
     """
     try:
         device_name, command = input_text.split(":", 1)
@@ -110,12 +113,11 @@ llm = ChatOpenAI(model_name="gpt-4o", temperature=0.6)
 
 # Create tool descriptions
 tools = [run_linux_command_tool, execute_linux_command_tool]
-
 tool_descriptions = render_text_description(tools)
 
 # Define the prompt template for Linux commands
 template = '''
-Assistant is a Linux system administrator AI agent. This is an Alpine Linux system so only use Alpine Linux supported commands.
+Assistant is a Linux system administrator AI agent. This is an Ubuntu Linux system so only use Alpine Linux supported commands.
 
 Redirecting output using ">" is allowed. Please do so to create files.
 
@@ -131,6 +133,22 @@ When creating text files use echo and the > to redirect the output to the file. 
 - To retrieve system information, use `run_linux_command_tool` if a parser exists.
 - If unsure, first attempt `run_linux_command_tool`, then fall back to `execute_linux_command_tool`.
 - Use echo > to create text files. Do no use tee.
+Assistant is a Linux system administrator AI agent. This is an Ubuntu WSL system, so only use Ubuntu-supported commands.
+
+Redirecting output using ">" is allowed. Please do so to create files.
+
+Assistant is designed to assist with Linux system commands, monitoring, diagnostics, and software installation.  
+It can run system commands like `ifconfig`, `ip route show`, `netstat`, `ps -ef`, and `ls -l` on Linux hosts using the provided tools.  
+
+When creating text files, use `echo` with `>` to redirect the output to the file. Do **not** use `tee`—always use `echo >` for file creation.
+
+### **INSTRUCTIONS:**
+- Assistant can **only** run supported commands: {tool_names}  
+- If a command is not supported by a parser, use `execute_linux_command_tool` to run it as a raw command.  
+- To retrieve system information, use `run_linux_command_tool` if a parser exists.  
+- If unsure, first attempt `run_linux_command_tool`, then fall back to `execute_linux_command_tool`.  
+- **If a required package is missing, Assistant should install it using:
+    sudo apt install -y <package_name>
 
 **TOOLS:**  
 {tools}
@@ -156,14 +174,14 @@ Follow the flow like this:
 #### **If command has a parser (`ifconfig`)**
 Thought: Do I need to use a tool? Yes  
 Action: run_linux_command_tool  
-Action Input: "PC1: ifconfig"  
+Action Input: "DESKTOP: ifconfig"  
 Observation: [parsed output here]  
 Final Answer: [Formatted response]
 
 #### **If command does NOT have a parser (`uname -a`)**
 Thought: Do I need to use a tool? Yes  
 Action: execute_linux_command_tool  
-Action Input: "PC1: uname -a"  
+Action Input: "DESKTOP: uname -a"  
 Observation: [raw output from `device.execute`]  
 Final Answer: [Formatted response]
 
@@ -173,6 +191,13 @@ Action: execute_linux_command_tool
 Action Input: "sudo echo 'Hello World' > CreatedbyAI.txt"
 Observation: [raw output from `device.execute`]  
 Final Answer: [Formatted response]
+
+#### **If software needs to be installed (`sshpass` as an example)**
+Thought: Do I need to install software? Yes  
+Action: execute_linux_command_tool  
+Action Input: "sudo apt install -y sshpass"  
+Observation: [installation output]  
+Final Answer: "The required package `sshpass` has been installed successfully."
 
 #### **⚠️ IMPORTANT: FILE CREATION RULES**
 🚀 **ONLY use `echo >` for file creation. No other method is allowed.**
@@ -190,7 +215,6 @@ New input: {input}
 
 # Create the agent
 input_variables = ["input", "agent_scratchpad", "chat_history"]
-
 prompt_template = PromptTemplate(
     template=template,
     input_variables=input_variables,

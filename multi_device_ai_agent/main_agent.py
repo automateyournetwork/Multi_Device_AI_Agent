@@ -13,6 +13,7 @@ from SW1_agent import tools as sw1_tools, prompt_template as sw1_prompt
 from SW2_agent import tools as sw2_tools, prompt_template as sw2_prompt
 from PC1_agent import tools as pc1_tools, prompt_template as pc1_prompt
 from PC2_agent import tools as pc2_tools, prompt_template as pc2_prompt
+from DESKTOP_agent import tools as desktop_tools, prompt_template as desktop_prompt
 
 from netbox_agent import tools as netbox_tools, prompt_template as netbox_prompt
 from email_agent import send_email_tool  
@@ -36,6 +37,7 @@ sw2_agent = initialize_agent(tools=sw2_tools, llm=llm, agent='zero-shot-react-de
 netbox_agent = initialize_agent(tools=netbox_tools, llm=llm, agent='structured-chat-zero-shot-react-description', prompt=netbox_prompt, verbose=True)
 pc1_agent = initialize_agent(tools=pc1_tools, llm=llm, agent='zero-shot-react-description', prompt=pc1_prompt, verbose=True)
 pc2_agent = initialize_agent(tools=pc2_tools, llm=llm, agent='zero-shot-react-description', prompt=pc2_prompt, verbose=True)
+desktop_agent = initialize_agent(tools=desktop_tools, llm=llm, agent='zero-shot-react-description', prompt=desktop_prompt, verbose=True)
 
 # Agent functions
 def r1_agent_func(input_text: str) -> str:
@@ -55,6 +57,9 @@ def pc1_agent_func(input_text: str) -> str:
 
 def pc2_agent_func(input_text: str) -> str:
     return pc1_agent.invoke(f"PC2: {input_text}")
+
+def desktop_agent_func(input_text: str) -> str:
+    return desktop_agent.invoke(f"DESKTOP: {input_text}")
 
 def netbox_agent_func(input_text: str) -> str:
     return netbox_agent.invoke(f"NetBox: {input_text}")
@@ -93,9 +98,10 @@ email_tool = Tool(name="Email Agent", func=email_agent_func, description="Send a
 image_tool = Tool(name="Image Analysis Agent", func=image_agent_func, description="Analyze an image based on a user prompt.")
 pc1_tool = Tool(name="PC1 Agent", func=pc1_agent_func, description="Use for Linux commands on PC1.")
 pc2_tool = Tool(name="PC2 Agent", func=pc2_agent_func, description="Use for Linux commands on PC2.")
+desktop_tool = Tool(name="DESKTOP Agent", func=desktop_agent_func, description="Use for Linux commands on DESKTOP.")
 
 # Create Master Agent
-master_tools = [r1_tool, r2_tool, sw1_tool, sw2_tool, netbox_tool, email_tool, image_tool, pc1_tool, pc2_tool]
+master_tools = [r1_tool, r2_tool, sw1_tool, sw2_tool, netbox_tool, email_tool, image_tool, pc1_tool, pc2_tool, desktop_tool]
 master_agent = initialize_agent(tools=master_tools, llm=llm, agent="zero-shot-react-description", verbose=True)
 
 logging.info(f"Master agent initialized with tools: {[tool.name for tool in master_tools]}")
