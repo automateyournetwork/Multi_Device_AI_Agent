@@ -96,3 +96,19 @@ devices:
         port: 22
         arguments:
           connection_timeout: 360                  
+  DESKTOP:
+    alias: "Ubuntu Local"
+    type: "host"
+    os: "linux"
+    platform: ubuntu
+    credentials:
+      default:
+        username: johncapobianco
+        password: Timbit@123
+    connections:
+      cli:
+        protocol: ssh
+        ip: 172.22.164.213
+        port: 22
+        arguments:
+          connection_timeout: 360

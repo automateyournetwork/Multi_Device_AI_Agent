@@ -32,7 +32,7 @@ SUPPORTED_LINUX_COMMANDS = [
 
 def run_linux_command(command: str, device_name: str):
     """
-    Execute a Linux command on a specified device (e.g., PC1).
+    Execute a Linux command on a specified device (e.g., PC2).
     Uses `device.parse(command)` if a parser exists, otherwise falls back to `device.execute(command)`.
     """
     try:
@@ -84,7 +84,7 @@ def run_linux_command_tool(input_text: str) -> dict:
     """
     Execute a supported Linux command on a specified host.
     Input format: "<device_name>: <command>"
-    Example: "PC1: ifconfig -a"
+    Example: "PC2: ifconfig -a"
     """
     try:
         device_name, command = input_text.split(":", 1)
@@ -97,7 +97,7 @@ def execute_linux_command_tool(input_text: str) -> dict:
     """
     Execute any arbitrary Linux command (including unsupported ones).
     Input format: "<device_name>: <command>"
-    Example: "PC1: uname -a"
+    Example: "PC2: uname -a"
     """
     try:
         device_name, command = input_text.split(":", 1)
@@ -155,14 +155,14 @@ Follow the flow like this:
 #### **If command has a parser (`ifconfig`)**
 Thought: Do I need to use a tool? Yes  
 Action: run_linux_command_tool  
-Action Input: "PC1: ifconfig"  
+Action Input: "PC2: ifconfig"  
 Observation: [parsed output here]  
 Final Answer: [Formatted response]
 
 #### **If command does NOT have a parser (`uname -a`)**
 Thought: Do I need to use a tool? Yes  
 Action: execute_linux_command_tool  
-Action Input: "PC1: uname -a"  
+Action Input: "PC2: uname -a"  
 Observation: [raw output from `device.execute`]  
 Final Answer: [Formatted response]
 
