@@ -17,7 +17,8 @@ from DESKTOP_agent import tools as desktop_tools, prompt_template as desktop_pro
 
 from netbox_agent import tools as netbox_tools, prompt_template as netbox_prompt
 from email_agent import send_email_tool  
-from image_agent import process_image_analysis  
+from image_agent import process_image_analysis
+from servicenow_agent import tools as servicenow_tools, prompt_template as servicenow_prompt
 
 # Load environment variables
 load_dotenv()
@@ -38,6 +39,7 @@ netbox_agent = initialize_agent(tools=netbox_tools, llm=llm, agent='structured-c
 pc1_agent = initialize_agent(tools=pc1_tools, llm=llm, agent='zero-shot-react-description', prompt=pc1_prompt, verbose=True)
 pc2_agent = initialize_agent(tools=pc2_tools, llm=llm, agent='zero-shot-react-description', prompt=pc2_prompt, verbose=True)
 desktop_agent = initialize_agent(tools=desktop_tools, llm=llm, agent='zero-shot-react-description', prompt=desktop_prompt, verbose=True)
+servicenow_agent = initialize_agent(tools=servicenow_tools, llm=llm, agent='structured-chat-zero-shot-react-description', prompt=servicenow_prompt, verbose=True)
 
 # Agent functions
 def r1_agent_func(input_text: str) -> str:
@@ -88,6 +90,10 @@ def image_agent_func(input_data):
         user_prompt=input_data["user_prompt"]
     )
 
+# ServiceNow Agent function
+def servicenow_agent_func(input_text: str) -> str:
+    return servicenow_agent.invoke(f"ServiceNow: {input_text}")
+
 # Define LangChain Tools
 r1_tool = Tool(name="R1 Agent", func=r1_agent_func, description="Use for Router R1 commands.")
 r2_tool = Tool(name="R2 Agent", func=r2_agent_func, description="Use for Router R2 commands.")
@@ -99,12 +105,13 @@ image_tool = Tool(name="Image Analysis Agent", func=image_agent_func, descriptio
 pc1_tool = Tool(name="PC1 Agent", func=pc1_agent_func, description="Use for Linux commands on PC1.")
 pc2_tool = Tool(name="PC2 Agent", func=pc2_agent_func, description="Use for Linux commands on PC2.")
 desktop_tool = Tool(name="DESKTOP Agent", func=desktop_agent_func, description="Use for Linux commands on DESKTOP.")
+servicenow_tool = Tool(name="ServiceNow Agent", func=servicenow_agent_func, description="Use for ServiceNow incident management operations.")
 
 # Create Master Agent
-master_tools = [r1_tool, r2_tool, sw1_tool, sw2_tool, netbox_tool, email_tool, image_tool, pc1_tool, pc2_tool, desktop_tool]
-master_agent = initialize_agent(tools=master_tools, llm=llm, agent="zero-shot-react-description", verbose=True)
+parent_tools = [r1_tool, r2_tool, sw1_tool, sw2_tool, netbox_tool, email_tool, image_tool, pc1_tool, pc2_tool, desktop_tool, servicenow_tool]
+parent_agent = initialize_agent(tools=parent_tools, llm=llm, agent="zero-shot-react-description", verbose=True)
 
-logging.info(f"Master agent initialized with tools: {[tool.name for tool in master_tools]}")
+logging.info(f"Master agent initialized with tools: {[tool.name for tool in parent_tools]}")
 
 # ============================================================
 # **Streamlit UI**
@@ -157,7 +164,7 @@ if page == "Chat with AI":
                 st.image(image_path, caption="📷 Analyzed Image", use_container_width=True)
 
             # 🚀 Pass formatted input to `master_agent.invoke()`
-            response = master_agent.invoke(input_data)
+            response = parent_agent.invoke(input_data)
 
             # ✅ Extract only the relevant response content
             response_text = response.get("output", "No valid response received.")
