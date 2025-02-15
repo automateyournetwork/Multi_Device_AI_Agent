@@ -277,6 +277,7 @@ tools = [
 ]
 # Extract tool names and descriptions
 tool_names = ", ".join([tool.name for tool in tools])
+
 tool_descriptions = "\n".join([f"{tool.name}: {tool.description}" for tool in tools])
 # ✅ Updated PromptTemplate
 prompt_template = PromptTemplate(
