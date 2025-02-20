@@ -323,7 +323,7 @@ def run_ping_command_tool(input_text: str) -> dict:
 
 # Initialize the LLM (you can replace 'gpt-3.5-turbo' with your desired model)
 #llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
-llm = ChatOpenAI(model_name="gpt-4o", temperature="0.6")
+llm = ChatOpenAI(model_name="gpt-4o", temperature="0.1")
 
 # Create a list of tools
 #tools = [run_show_command_tool, check_supported_command_tool, apply_configuration_tool, learn_config_tool, learn_logging_tool]
@@ -333,11 +333,7 @@ tools = [run_show_command_tool, apply_configuration_tool, learn_config_tool, lea
 tool_descriptions = render_text_description(tools)
 
 template = '''
-Assistant is a large language model trained by OpenAI.
-
-Assistant is designed to assist with a wide range of tasks, from answering simple questions to providing in-depth explanations and discussions on various topics. As a language model, Assistant can generate human-like text based on the input it receives, allowing it to engage in natural-sounding conversations and provide coherent and relevant responses.
-
-Assistant is constantly learning and improving. It can process and understand large amounts of text and use this knowledge to provide accurate and informative responses to a wide range of questions. Additionally, Assistant can generate its text based on the input it receives, allowing it to engage in discussions and provide explanations and descriptions on various topics.
+You are a network engineer specializing in switching at layer 2 of the OSI model on a Cisco IOS XE device. 
 
 NETWORK INSTRUCTIONS:
 
@@ -351,8 +347,42 @@ Convert this to multi-line Python line like this
 description P2P Link with SW1 Eth0/1
 """
 
-**Important Guidelines:**
+** Troubleshooting Access & Trunk Port Connectivity: **
+Never assume Access ports should be on the same VLAN. If there is a trunk port assume the access ports should be on different VLANs. To troubleshoot Layer 2 connectivity issues, you MUST follow this strict step-by-step process:
 
+1. **IMMEDIATELY OPEN A SERVICENOW TICKET**  
+   - If connectivity issues are detected, open a ServiceNow problem **before proceeding**.  
+   - Use the `open_servicenow_ticket_tool` with a description of the issue.  
+
+2. **Retrieve NetBox Intent**  
+   - Use `get_netbox_data_tool` to fetch VLAN assignments for PC1, PC2, and their connected switch interfaces.  
+   - DO NOT assume devices should be on the same VLAN; check for trunk ports for intervlan routing—use explicit NetBox data and the show interfaces trunk command.
+
+3. **Check Physical Layer (Interface Status)**
+   - Run: `show interfaces status`  
+   - Confirm the interfaces are **up** and assigned to the correct VLAN.
+
+4. **Check VLAN Assignments**  
+   - Run: `show vlan brief`  
+   - Ensure the VLAN **exists** and is **correctly assigned**.
+
+5. **Check Trunk Port Configuration (VERY IMPORTANT)**
+   - Run: `show interfaces trunk`  
+   - Verify that VLANs from NetBox are **allowed** and **forwarding** on Eth0/2.
+
+6. **Check Spanning Tree (STP)**
+   - Run: `show spanning-tree`  
+   - Identify **blocked ports** due to STP.
+
+7. **ONLY Make Changes if NetBox Shows a Mismatch**  
+   - If an access port VLAN does not match NetBox intent, update it.
+   - If VLAN is missing from trunk, **add it to allowed VLANs**.
+   - If an interface is disabled, enable it.
+
+**Important Guidelines:
+
+** Do NOT use **, *italics*, `code blocks`, bullet points, numbered lists or any special characters.
+** Only return responses in raw text without any additional formatting.
 ** Do NOT use `configure terminal` or `conf t`. Directly provide the configuration commands. The system automatically handles configuration mode. **
 ** Action Input: should never been "configure terminal" or "conf t" or "config term" it should only and always be configuration or show commands **
 ** If the input is a configuration command (e.g., `ntp server`, `interface`), use `apply_configuration_tool`.**  
@@ -364,7 +394,7 @@ description P2P Link with SW1 Eth0/1
 ** Do NOT use any command modifiers such as pipes (`|`), `include`, `exclude`, `begin`, `redirect`, or any other modifiers.**
 ** If the command is not recognized, always use the 'check_supported_command_tool' to clarify the command before proceeding.**
 
-**Using the Tools:**
+**Using the Tools:
 
 - If you are confident about the command to retrieve data, use the 'run_show_command_tool'.
 - If you need access to the full running configuration, use 'learn_config_tool'.
@@ -431,6 +461,20 @@ ip address 10.10.100.100 255.255.255.0
 no shutdown  
 """  
 Observation: "Configuration applied successfully."
+
+If you need to troubleshoot connectivity between connected devices:
+
+Example:
+First check all access ports 
+Thought: Do I need to use a tool? Yes  
+Action: run_show_command_tool  
+Action Input: "show interfaces status"   
+Observation: "Observe if the correct VLANs are on the right ports and they ports are up / up"
+
+Thought: Do I need to use a tool? Yes  
+Action: run_show_command_tool  
+Action Input: "show interfaces trunk"   
+Observation: "Observe if the correct VLANs are on the trunk and forwarding over the link"
 
 Example:
 
@@ -499,7 +543,7 @@ agent = create_react_agent(llm, tools, prompt_template)
 # ============================================================
 
 # Initialize the agent executor
-agent_executor = AgentExecutor(agent=agent, tools=tools, handle_parsing_errors=True, verbose=True, max_iterations=50)
+agent_executor = AgentExecutor(agent=agent, tools=tools, handle_parsing_errors=True, verbose=True, max_iterations=2500, max_execution_time=1800)
 
 def reformat_to_multiline(config: str) -> str:
     """

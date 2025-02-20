@@ -76,37 +76,92 @@ def parse_json_input(input_data):
     return input_data
 
 # Define LangChain Tools
-get_incidents_tool = Tool(
-    name="get_incidents_tool",
-    description="Fetch incidents from ServiceNow based on query parameters.",
-    func=lambda input_data: ServiceNowController(SERVICENOW_URL, SERVICENOW_USER, SERVICENOW_PASSWORD).get_records("incident", input_data)
-)
-
-create_incident_tool = Tool(
-    name="create_incident_tool",
-    description="Create a new incident in ServiceNow.",
-    func=lambda input_data: ServiceNowController(SERVICENOW_URL, SERVICENOW_USER, SERVICENOW_PASSWORD).create_record("incident", input_data)
-)
-
-update_incident_tool = Tool(
-    name="update_incident_tool",
-    description="Update an existing incident in ServiceNow using its sys_id.",
-    func=lambda input_data: ServiceNowController(SERVICENOW_URL, SERVICENOW_USER, SERVICENOW_PASSWORD).update_record(
-        "incident",  # ✅ Corrected from "problem" to "incident"
-        parse_json_input(input_data).get('sys_id', ''),
-        parse_json_input(input_data).get('payload', {})
-    )
-)
 get_problems_tool = Tool(
     name="get_problems_tool",
     description="Fetch problems from ServiceNow based on query parameters.",
     func=lambda input_data: ServiceNowController(SERVICENOW_URL, SERVICENOW_USER, SERVICENOW_PASSWORD).get_records("problem", input_data)
 )
 
+def generate_ai_problem_description(short_description, troubleshooting_notes=""):
+    """Use LLM to generate a structured and detailed problem description based on real data."""
+    
+    # If troubleshooting notes exist, prioritize real data over AI hallucination
+    real_notes_section = f"\n**Troubleshooting Notes:** {troubleshooting_notes}" if troubleshooting_notes else ""
+    
+    prompt = f"""
+    Given the following problem statement and any troubleshooting notes, generate a **detailed but structured** problem description.
+
+    **Problem Statement (short description):**
+    {short_description}
+
+    {real_notes_section}
+
+    **Example Expansions:**
+    1️⃣ Short: "PC1 cannot ping PC2."
+       Expanded: "PC1 (IP 10.10.10.100) is experiencing 100% packet loss when attempting to communicate with PC2 (IP 10.10.30.100). This suggests a possible routing issue, firewall misconfiguration, or network interface failure."
+
+    2️⃣ Short: "VPN not connecting."
+       Expanded: "Users are unable to establish a VPN connection. Authentication logs show failed attempts, possibly due to expired certificates or incorrect tunnel configurations."
+
+    3️⃣ Short: "Web application slow."
+       Expanded: "Users report slow load times on the internal web application hosted at 192.168.1.50. The issue persists across multiple networks and devices, indicating a backend performance issue."
+
+    🚀 Generate a concise but **structured** problem description using **ONLY** the provided information:
+    """
+
+    try:
+        llm_response = llm.invoke(prompt)
+
+        # Extract response correctly, depending on the LangChain LLM return type
+        if isinstance(llm_response, dict) and "text" in llm_response:
+            description = llm_response["text"].strip()
+        elif hasattr(llm_response, "content"):  # Handle OpenAI response object
+            description = llm_response.content.strip()
+        else:
+            description = str(llm_response).strip()
+
+    except Exception as e:
+        logging.error(f"⚠️ LLM error generating problem description: {e}")
+        description = short_description  # Fallback to short description
+
+    logging.info(f"📝 Generated Problem Description: {description}")  # Debugging log
+
+    return description
+
+def validate_problem_payload(input_data):
+    """Validates the problem payload before sending to ServiceNow."""
+    parsed_data = parse_json_input(input_data)
+
+    short_desc = parsed_data.get("short_description", "").strip()
+
+    # Check if the short description is missing or default
+    if not short_desc or short_desc == "DEFAULT: Missing problem statement":
+        logging.error("🚨 Invalid problem submission: Missing or default short description")
+        return False, "Invalid problem: Missing or default short description."
+
+    return True, parsed_data
+
 create_problem_tool = Tool(
     name="create_problem_tool",
-    description="Create a new problem in ServiceNow.",
-    func=lambda input_data: ServiceNowController(SERVICENOW_URL, SERVICENOW_USER, SERVICENOW_PASSWORD).create_record("problem", input_data)
+    description="Create a new problem in ServiceNow with required fields, ensuring short_description is valid.",
+    func=lambda input_data: (
+        ServiceNowController(SERVICENOW_URL, SERVICENOW_USER, SERVICENOW_PASSWORD).create_record(
+            "problem",
+            {
+                "short_description": parse_json_input(input_data).get("short_description", "DEFAULT: Missing problem statement"),
+                "description": generate_ai_problem_description(
+                    parse_json_input(input_data).get("short_description", ""),
+                    parse_json_input(input_data).get("troubleshooting_notes", "")
+                ),
+                "category": parse_json_input(input_data).get("category", "Network"),
+                "subcategory": parse_json_input(input_data).get("subcategory", "Connectivity"),
+                "impact": parse_json_input(input_data).get("impact", "2"),
+                "urgency": parse_json_input(input_data).get("urgency", "2"),
+                "priority": parse_json_input(input_data).get("priority", "4"),
+                "problem_state": "101",
+            }
+        ) if validate_problem_payload(input_data)[0] else {"error": validate_problem_payload(input_data)[1]}
+    )
 )
 
 def get_problem_sys_id(problem_number):
@@ -127,8 +182,56 @@ def get_problem_state(sys_id):
         return result["result"][0]["problem_state"]
     return None
 
-def transition_problem_state(problem_number, resolution_notes):
-    """Ensure the problem follows the correct state transitions"""
+def get_problem_details(problem_number):
+    """Fetch detailed problem information from ServiceNow."""
+    servicenow = ServiceNowController(SERVICENOW_URL, SERVICENOW_USER, SERVICENOW_PASSWORD)
+
+    query_params = {"sysparm_query": f"number={problem_number}"}
+    result = servicenow.get_records("problem", query_params)
+
+    if "result" in result and len(result["result"]) > 0:
+        return json.dumps(result["result"][0], indent=2)  # Convert to readable JSON format
+
+    return "Problem details not found."
+
+# Function to generate AI-based resolution notes
+def generate_ai_resolution(problem_number):
+    """Use LLM to generate a detailed resolution based on problem details."""
+    problem_details = get_problem_details(problem_number)
+
+    # Construct a prompt for LLM to generate a resolution reason
+    prompt = f"""
+    Given the following problem report, generate a **concise and structured** resolution statement.
+
+    **Problem Details:**
+    {problem_details}
+
+    **Resolution Instructions:**
+    - Clearly describe the root cause.
+    - Outline the exact steps taken to fix the problem.
+    - Use network-related terminology if applicable.
+    - Keep it professional and to the point.
+
+    **Example Resolutions:**
+    1️⃣ "The router interface was administratively shut down. We issued 'no shutdown' to bring it up."
+    2️⃣ "BGP peering was down due to a misconfigured ASN. Corrected ASN and reset the session."
+    3️⃣ "Firewall ACLs were blocking traffic. Adjusted rule 101 to allow ICMP between PC1 and PC2."
+
+    🚀 Generate a **concise** but **accurate** resolution statement:
+    """
+
+    try:
+        llm_response = llm.invoke(prompt)
+        resolution = llm_response.content.strip() if hasattr(llm_response, "content") else str(llm_response).strip()
+    except Exception as e:
+        logging.error(f"LLM error generating resolution: {e}")
+        resolution = "Resolved with AI automation."  # Fallback message
+
+    return resolution
+
+# Function to transition a problem ticket through resolution
+def transition_problem_state(problem_number, resolution_notes=None):
+    """Ensure the problem follows correct state transitions and uses AI-generated resolutions."""
     servicenow = ServiceNowController(SERVICENOW_URL, SERVICENOW_USER, SERVICENOW_PASSWORD)
     sys_id = get_problem_sys_id(problem_number)
 
@@ -138,15 +241,16 @@ def transition_problem_state(problem_number, resolution_notes):
     logging.info(f"✅ Found sys_id: {sys_id} for problem {problem_number}")
 
     # Step 1: Move to "In Progress"
-    logging.info(f"🔄 Moving problem {problem_number} to 'In Progress'...")
     servicenow.update_record("problem", sys_id, {
         "problem_state": "3",
         "state": "In Progress",
-        "assigned_to": SERVICENOW_USER
+        "assigned_to": SERVICENOW_USER,
+        "work_notes": f"Problem {problem_number} moved to 'In Progress' for resolution."
     })
 
-    # Step 2: Move to "Resolved"
-    logging.info(f"✅ Marking problem {problem_number} as 'Resolved'...")
+    # Step 2: Generate AI-powered resolution reason
+    resolution_notes = resolution_notes or generate_ai_resolution(problem_number)
+
     servicenow.update_record("problem", sys_id, {
         "problem_state": "6",
         "state": "Resolved",
@@ -154,35 +258,32 @@ def transition_problem_state(problem_number, resolution_notes):
         "resolved_at": "2025-02-15 23:00:00",
         "resolution_code": "fix_applied",
         "resolution_notes": resolution_notes,
-        "work_notes": f"Resolution: {resolution_notes}"
+        "work_notes": f"Resolution applied: {resolution_notes}"
     })
 
     # Step 3: Move to "Closed"
-    logging.info(f"✅ Closing problem {problem_number}...")
-    response = servicenow.update_record("problem", sys_id, {
+    return servicenow.update_record("problem", sys_id, {
         "problem_state": "107",
         "state": "Closed",
         "active": "false",
         "close_code": "Solved (Permanently)",
         "close_notes": resolution_notes,
-        "work_notes": f"Closing issue: {resolution_notes}"
+        "work_notes": f"Final closure details: {resolution_notes}"
     })
-
-    return response
 
 update_problem_tool = Tool(
     name="update_problem_tool",
-    description="Update and close a problem in ServiceNow following the correct workflow.",
+    description="Update and close a problem in ServiceNow with an AI-generated resolution.",
     func=lambda input_data: transition_problem_state(
-        parse_json_input(input_data).get("sys_id", ""),
-        parse_json_input(input_data).get("resolution_notes", "Resolved by automation.")
+        parse_json_input(input_data).get("problem_id", ""),
+        parse_json_input(input_data).get("resolution_notes")
     )
 )
 
 # Define the AI Agent
 llm = ChatOpenAI(model_name="gpt-4o", temperature=0.6)
 
-tools = [get_incidents_tool, create_incident_tool, update_incident_tool, get_problems_tool, create_problem_tool, update_problem_tool]
+tools = [get_problems_tool, create_problem_tool, update_problem_tool]
 
 prompt_template = PromptTemplate(
     input_variables=["input", "agent_scratchpad", "tool_names", "tools"],
@@ -199,6 +300,10 @@ prompt_template = PromptTemplate(
     1️⃣ **Move to "In Progress"** before resolving  
     2️⃣ **Move to "Resolved"** with a resolution note  
     3️⃣ **Move to "Closed"** with confirmation 
+
+    ** Assistant must strictly return plain text with no markdown formatting. 
+    ** Do NOT use **bold**, *italics*, `code blocks`, bullet points, or any special characters.
+    ** Only return responses in raw text without any additional formatting.
 
     **FORMAT:**  
     Thought: [Your reasoning]  
@@ -254,7 +359,8 @@ agent_executor = AgentExecutor(
     tools=tools,
     handle_parsing_errors=True,
     verbose=True,
-    max_iterations=50
+    max_iterations=2500,
+    max_execution_time=1800
 )
 
 logging.info("🚀 ServiceNow AgentExecutor initialized with tools.")

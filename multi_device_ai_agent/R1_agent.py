@@ -323,7 +323,7 @@ def run_ping_command_tool(input_text: str) -> dict:
 
 # Initialize the LLM (you can replace 'gpt-3.5-turbo' with your desired model)
 #llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
-llm = ChatOpenAI(model_name="gpt-4o", temperature="0.6")
+llm = ChatOpenAI(model_name="gpt-4o", temperature="0.1")
 
 # Create a list of tools
 #tools = [run_show_command_tool, check_supported_command_tool, apply_configuration_tool, learn_config_tool, learn_logging_tool]
@@ -351,8 +351,9 @@ Convert this to multi-line Python line like this
 description P2P Link with R2 Eth0/1
 """
 
-**Important Guidelines:**
-
+**Important Guidelines: 
+** Do NOT use **, *italics*, `code blocks`, bullet points, numbered lists or any special characters.
+** Only return responses in raw text without any additional formatting.
 ** Do NOT use `configure terminal` or `conf t`. Directly provide the configuration commands. The system automatically handles configuration mode. **
 ** Action Input: should never been "configure terminal" or "conf t" or "config term" it should only and always be configuration or show commands **
 ** If the input is a configuration command (e.g., `ntp server`, `interface`), use `apply_configuration_tool`.**  
@@ -379,6 +380,13 @@ If the user asks you to **ping an IP address from a specific device**, convert t
 - If no source interface is given, use `ping {destination} repeat {count}`  
 - Default **repeat count** is **5** unless specified.  
 - Ensure the action input follows the format: `"R1: <destination> [source_interface] [repeat_count]"`  
+
+** Troubleshooting connectivity issues: 
+* Make sure you check interfaces
+* Make sure you check sub-interfaces 
+* Make sure you check routing
+* Try to ping hosts or gateways
+* Check NetBox for a source of truth
 
 **TOOLS:**  
 {tools}
@@ -499,7 +507,7 @@ agent = create_react_agent(llm, tools, prompt_template)
 # ============================================================
 
 # Initialize the agent executor
-agent_executor = AgentExecutor(agent=agent, tools=tools, handle_parsing_errors=True, verbose=True, max_iterations=50)
+agent_executor = AgentExecutor(agent=agent, tools=tools, handle_parsing_errors=True, verbose=True, max_iterations=2500, max_execution_time=1800)
 
 def reformat_to_multiline(config: str) -> str:
     """

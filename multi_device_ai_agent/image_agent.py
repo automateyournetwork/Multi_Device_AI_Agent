@@ -62,7 +62,7 @@ def process_image_analysis(image_path: str, user_prompt: str):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o", temperature="0.6",
+            model="gpt-4o", temperature="0.1",
             messages=[
                 {
                     "role": "user",

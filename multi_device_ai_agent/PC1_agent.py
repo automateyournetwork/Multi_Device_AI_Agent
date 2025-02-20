@@ -132,6 +132,13 @@ When creating text files use echo and the > to redirect the output to the file. 
 - If unsure, first attempt `run_linux_command_tool`, then fall back to `execute_linux_command_tool`.
 - Use echo > to create text files. Do no use tee.
 
+** Troubleshooting connectivity issues: 
+* Make sure you ping the other hosts
+* Make sure you check your routing table
+* Make sure you check your interfaces
+* Make sure you ping your default gateway for the subnet 
+* Check NetBox for a source of truth
+
 **TOOLS:**  
 {tools}
 
@@ -202,7 +209,7 @@ prompt_template = PromptTemplate(
 agent = create_react_agent(llm, tools, prompt_template)
 
 # Initialize the agent executor
-agent_executor = AgentExecutor(agent=agent, tools=tools, handle_parsing_errors=True, verbose=True, max_iterations=50)
+agent_executor = AgentExecutor(agent=agent, tools=tools, handle_parsing_errors=True, verbose=True, max_iterations=2500, max_execution_time=1800)
 
 def handle_command(command: str, device_name: str):
     """

@@ -1,4 +1,6 @@
 import os
+import re
+import time
 import json
 import logging
 import requests
@@ -114,37 +116,86 @@ def load_urls(file_path='netbox_apis.json'):
 get_netbox_data_tool = Tool(
     name="get_netbox_data_tool",
     description="Fetch data from NetBox using the correct API URL.",
-    func=lambda input_data: get_data_directly(input_data.get("api_url"))  # No 'payload' needed for GET
+    func=lambda input_data: get_data_directly(input_data["api_url"])  # Force use of a plain string
 )
 
+def validate_tool_input(input_data, expected_keys=None, max_retries=5):
+    """
+    Ensures the input_data is properly formatted and contains only expected keys.
+    Retries up to max_retries times if too many arguments are present.
+    """
+    retries = 0
+
+    while retries < max_retries:
+        # Ensure input is a dictionary
+        if isinstance(input_data, str):
+            try:
+                input_data = json.loads(input_data)
+            except json.JSONDecodeError:
+                logging.error("❌ Invalid JSON input.")
+                return {"error": "Invalid JSON format."}
+
+        if not isinstance(input_data, dict):
+            logging.error(f"🚨 Expected dictionary input but got {type(input_data)}")
+            return {"error": "Invalid input format. Expected JSON object."}
+
+        # Check if there are too many keys
+        if expected_keys and len(input_data) > len(expected_keys):
+            logging.warning(f"⚠️ Too many arguments provided. Expected {expected_keys}, but got {list(input_data.keys())}")
+            
+            # Remove unnecessary keys
+            input_data = {key: input_data[key] for key in expected_keys if key in input_data}
+            
+            retries += 1
+            time.sleep(1)  # Add a short delay before retrying
+            continue
+        else:
+            return input_data  # Input is valid, return it
+
+    logging.error("❌ Maximum retries exceeded due to too many arguments.")
+    return {"error": "Too many arguments provided, and retries exceeded."}
+
 def get_data_directly(api_url: str):
-    if not api_url:
-        return {"error": "Missing required field `api_url` in input data."}
+    input_data = validate_tool_input({"api_url": api_url}, expected_keys=["api_url"])
 
-    try:
-        # Initialize the NetBoxController
-        netbox_controller = NetBoxController(
-            netbox_url=os.getenv("NETBOX_URL"),
-            api_token=os.getenv("NETBOX_TOKEN")
-        )
+    if "error" in input_data:
+        return input_data
 
-        # Call the API directly
-        logging.info(f"Fetching data directly from API: {api_url}")
-        data = netbox_controller.get_api(api_url)
+    api_url = input_data["api_url"]
 
-        # Detect and format configurations with newlines
-        if isinstance(data, dict) and "config" in data:
-            config = data["config"]
-            if "\\n" in config or "\n" in config:
-                logging.info("Detected configuration with newlines. Formatting as multi-line string.")
-                lines = config.replace("\\n", "\n").strip().split("\n")
-                data["config"] = f'"""\n{textwrap.dedent("\n".join(lines))}\n"""'
+    if not api_url or not isinstance(api_url, str):
+        return {"error": "Invalid or missing `api_url`."}
 
-        return {"status": "success", "message": "Data fetched successfully.", "data": data}
+    if not re.match(r"^/api/[a-z]+/[a-z\-]+", api_url):
+        logging.error(f"🚨 Invalid API URL detected: {api_url}")
+        return {"error": f"Invalid API URL format: {api_url}"}
 
-    except Exception as e:
-        logging.error(f"Error while fetching data from API: {str(e)}")
-        return {"error": f"GET request failed: {str(e)}"}
+    full_url = f"{os.getenv('NETBOX_URL').rstrip('/')}/{api_url}"
+
+    netbox_controller = NetBoxController(
+        netbox_url=os.getenv("NETBOX_URL"),
+        api_token=os.getenv("NETBOX_TOKEN")
+    )
+
+    logging.info(f"🚀 Fetching data from API: {full_url}")
+
+    retries = 5
+    for attempt in range(1, retries + 1):
+        try:
+            response = netbox_controller.get_api(api_url)
+            if isinstance(response, dict) and response.get("error"):
+                logging.warning(f"⚠️ API request failed on attempt {attempt}/{retries}: {response['error']}")
+                if attempt == retries:
+                    return {"error": f"API request failed after {retries} attempts: {response['error']}"}
+                time.sleep(2)
+                continue
+            return {"status": "success", "message": "Data fetched successfully.", "data": response}
+        except Exception as e:
+            logging.error(f"❌ Error while fetching data from API: {str(e)}")
+            if attempt == retries:
+                return {"error": f"GET request failed after {retries} attempts: {str(e)}"}
+            time.sleep(2)
+    return {"error": "Unexpected failure in API request."}
 
 # ✅ Improved Create NetBox Data Tool
 create_netbox_data_tool = Tool(
@@ -154,11 +205,10 @@ create_netbox_data_tool = Tool(
 )
 
 def create_data_handler(input_data):
-    if isinstance(input_data, str):
-        try:
-            input_data = json.loads(input_data)
-        except json.JSONDecodeError:
-            return {"error": "Invalid JSON input. Expected a JSON object."}
+    input_data = validate_tool_input(input_data, expected_keys=["api_url", "payload"])
+
+    if "error" in input_data:
+        return input_data
 
     api_url = input_data.get("api_url")
     payload = input_data.get("payload")
@@ -177,22 +227,16 @@ def create_data_handler(input_data):
             "message": f"Successfully created resource at {api_url}.",
             "response": response
         }
-
     except requests.exceptions.HTTPError as http_err:
         return {"error": f"HTTP error occurred: {http_err}"}
     except Exception as e:
         return {"error": f"POST request failed: {str(e)}"}
 
 def delete_data_handler(input_data):
-    logging.info("🚀 delete_data_handler was called.")
-    logging.info(f"📝 Input Data: {json.dumps(input_data, indent=2)}")
+    input_data = validate_tool_input(input_data, expected_keys=["api_url", "payload"])
 
-    if isinstance(input_data, str):
-        try:
-            input_data = json.loads(input_data)
-        except json.JSONDecodeError:
-            logging.error("❌ Invalid JSON input provided to delete_data_handler.")
-            return {"error": "Invalid JSON input. Expected a JSON object."}
+    if "error" in input_data:
+        return input_data
 
     api_url = input_data.get("api_url")
     payload = input_data.get("payload", {})
@@ -210,7 +254,6 @@ def delete_data_handler(input_data):
             api_token=os.getenv("NETBOX_TOKEN")
         )
 
-        # Lookup entity by name to get its ID
         lookup_response = netbox_controller.get_api(api_url, params={'name': name})
         logging.info(f"📦 Lookup response: {json.dumps(lookup_response, indent=2)}")
 
@@ -223,7 +266,6 @@ def delete_data_handler(input_data):
 
         logging.info(f"🗑️ Preparing to DELETE at {delete_url}")
 
-        # Perform the deletion
         delete_response = netbox_controller.delete_api(delete_url)
         logging.info(f"📝 DELETE response: {delete_response}")
 
@@ -268,7 +310,7 @@ def process_agent_response(response):
 
 # Initialize the LLM (you can replace 'gpt-3.5-turbo' with your desired model)
 #llm = Ollama(model="command-r7b", base_url="http://ollama:11434")
-llm = ChatOpenAI(model_name="gpt-4o", temperature="0.6")
+llm = ChatOpenAI(model_name="gpt-4o", temperature="0.1")
 # ✅ Define the tools
 tools = [
     Tool(name="get_netbox_data_tool", func=get_data_directly, description="Fetch data from NetBox using a valid API URL."),
@@ -285,11 +327,19 @@ prompt_template = PromptTemplate(
     template='''
     You are a network assistant managing NetBox data using CRUD operations.
 
+    **Strict URL Formatting Rules**  
+    - Always provide URLs **exactly** as `/api/section/resource/` (e.g., `/api/ipam/ip-addresses/`)
+    - Never wrap URLs in JSON objects or add `tool_input`
+    - Never use `%22`, `%7B`, or any special encoding in URLs
+    - Example Correct Format:
+      Action Input: {{ "api_url": "/api/ipam/ip-addresses/?address=10.10.10.100" }}    
+
     Always use the API URL provided in the Action Input without modifying it or validating it.
 
-    **Important Formatting Guidelines for Configuration Outputs:**
-    Never add %22%0A or anything else appending to the NetBox URLs 
-    
+    ** Assistant must strictly return plain text with no markdown formatting. 
+    ** Do NOT use **bold**, *italics*, `code blocks`, bullet points, or any special characters.
+    ** Only return responses in raw text without any additional formatting.
+        
     **TOOLS:**  
     {tools}
 
@@ -359,6 +409,7 @@ agent_executor = AgentExecutor(
     tools=tools,
     handle_parsing_errors=True,
     verbose=True,  # Enable detailed logs
-    max_iterations=50
+    max_iterations=2500,
+    max_execution_time=1800
 )
 logging.info("🚀 AgentExecutor initialized with tools.")

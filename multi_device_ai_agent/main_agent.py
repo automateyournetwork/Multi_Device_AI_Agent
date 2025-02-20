@@ -28,7 +28,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 logging.basicConfig(level=logging.INFO)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-llm = ChatOpenAI(model_name="gpt-4o", temperature="0.6")
+llm = ChatOpenAI(model_name="gpt-4o", temperature="0.1")
 
 # Initialize sub-agents
 r1_agent = initialize_agent(tools=r1_tools, llm=llm, agent='zero-shot-react-description', prompt=r1_prompt, verbose=True)

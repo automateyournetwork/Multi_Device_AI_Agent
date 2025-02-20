@@ -1,0 +1,15 @@
+Please verify connectivity between PC1 (10.10.10.100) and PC2 (10.10.30.100). 
+
+You must immediately open a ServiceNow problem before proceeding if any issues are identified  for compliance purposes . 
+
+Assume NetBox is correct and has the valid configuration information for interfaces and use this data to determine the connected devices and to guide your troubleshooting and problem resolution. 
+
+Your changes should NOT differ from the NetBox intent. 
+
+Troubleshoot and resolve the problem. 
+
+Prove you resolved the problem. 
+
+If you resolved the problem update the ServiceNow problem with the resolution details. 
+
+Finally email a report to John Capobianco at ptcapo@gmail.com with your findings and resolution and ServiceNow ticket details. 

@@ -226,7 +226,7 @@ prompt_template = PromptTemplate(
 agent = create_react_agent(llm, tools, prompt_template)
 
 # Initialize the agent executor
-agent_executor = AgentExecutor(agent=agent, tools=tools, handle_parsing_errors=True, verbose=True, max_iterations=50)
+agent_executor = AgentExecutor(agent=agent, tools=tools, handle_parsing_errors=True, verbose=True, max_iterations=2500, max_execution_time=1800)
 
 def handle_command(command: str, device_name: str):
     """
