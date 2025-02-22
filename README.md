@@ -30,7 +30,9 @@ SMTP_RELAY_SERVER=smtp.gmail.com
 SMTP_RELAY_PORT=587
 SMTP_RELAY_USERNAME=<your gmail>
 SMTP_RELAY_PASSWORD=<your application key>
-
+SERVICENOW_URL="https://<instance>.service-now.com/"
+SERVICENOW_USER="<account user>"
+SERVICENOW_PASSWORD"<your key>"
 ⚠️ Currently, this project only supports OpenAI models. Open-source model integration is in progress!
 
 Configure Your Network Topology:
